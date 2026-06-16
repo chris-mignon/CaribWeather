@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\AiAssistantService;
+use App\Models\AlertNotification;
 use App\Services\WeatherDataService;
 use App\Models\AlertSubscription;
 use App\Models\SavedLocation;
@@ -111,6 +112,30 @@ Route::delete('/alerts/{alert}', function (Request $request, AlertSubscription $
     return response()->noContent();
 });
 
+Route::get('/notifications', function (Request $request) {
+    $clientId = $request->user() ? null : caribweather_client_id($request);
+
+    return response()->json([
+        'data' => AlertNotification::query()
+            ->where(fn ($query) => $query
+                ->when($request->user(), fn ($query, $user) => $query->where('user_id', $user->id))
+                ->when(! $request->user(), fn ($query) => $query->where('client_id', $clientId))
+            )
+            ->latest()
+            ->limit(20)
+            ->get()
+            ->map(fn (AlertNotification $notification) => caribweather_notification_payload($notification)),
+    ]);
+});
+
+Route::post('/notifications/{notification}/read', function (Request $request, AlertNotification $notification) {
+    abort_unless(caribweather_owns_record($request, $notification), 404);
+
+    $notification->forceFill(['read_at' => now()])->save();
+
+    return response()->json(['data' => caribweather_notification_payload($notification->refresh())]);
+});
+
 Route::get('/saved-locations', function (Request $request) {
     $clientId = $request->user() ? null : caribweather_client_id($request);
 
@@ -174,7 +199,7 @@ if (! function_exists('caribweather_client_id')) {
 }
 
 if (! function_exists('caribweather_owns_record')) {
-    function caribweather_owns_record(Request $request, AlertSubscription|SavedLocation $record): bool
+    function caribweather_owns_record(Request $request, AlertSubscription|SavedLocation|AlertNotification $record): bool
     {
         if ($request->user()) {
             return $record->user_id === $request->user()->id;
@@ -198,6 +223,24 @@ if (! function_exists('caribweather_alert_payload')) {
             'channels' => $alert->channels ?? ['in_app'],
             'enabled' => $alert->enabled,
             'createdAt' => $alert->created_at?->toISOString(),
+        ];
+    }
+}
+
+if (! function_exists('caribweather_notification_payload')) {
+    function caribweather_notification_payload(AlertNotification $notification): array
+    {
+        return [
+            'id' => $notification->id,
+            'type' => $notification->type,
+            'location' => $notification->location,
+            'conditionValue' => $notification->condition_value,
+            'threshold' => $notification->threshold,
+            'message' => $notification->message,
+            'channels' => $notification->channels ?? ['in_app'],
+            'deliveredAt' => $notification->delivered_at?->toISOString(),
+            'readAt' => $notification->read_at?->toISOString(),
+            'createdAt' => $notification->created_at?->toISOString(),
         ];
     }
 }

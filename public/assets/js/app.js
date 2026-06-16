@@ -14,6 +14,7 @@ function caribWeatherApp() {
     activeLayer: 'temperature',
     chartInstances: {},
     assistantQuery: '',
+    notifications: [],
     chat: [
       {
         id: crypto.randomUUID(),
@@ -157,6 +158,7 @@ function caribWeatherApp() {
       this.registerServiceWorker();
       this.refreshWeather();
       this.loadAlerts();
+      this.loadNotifications();
       this.$watch('activeView', (value) => {
         if (value === 'map') setTimeout(() => this.initMap(), 100);
         if (value === 'analytics') setTimeout(() => this.renderCharts(), 100);
@@ -355,6 +357,44 @@ function caribWeatherApp() {
       }
     },
 
+    async loadNotifications() {
+      try {
+        const response = await fetch('/api/notifications', {
+          headers: {
+            Accept: 'application/json',
+            'X-CaribWeather-Client': this.clientId
+          }
+        });
+        if (!response.ok) throw new Error('Notifications backend unavailable');
+        const payload = await response.json();
+        this.notifications = payload.data || [];
+      } catch (error) {
+        this.notifications = [];
+      }
+    },
+
+    async markNotificationRead(id) {
+      try {
+        const response = await fetch(`/api/notifications/${id}/read`, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'X-CaribWeather-Client': this.clientId
+          }
+        });
+        if (!response.ok) throw new Error('Could not mark notification read');
+        const payload = await response.json();
+        this.notifications = this.notifications.map((notification) => notification.id === id ? payload.data : notification);
+      } catch (error) {
+        this.notice = 'Could not update notification status.';
+      }
+    },
+
+    async checkAlertsNow() {
+      this.notice = 'Reloaded recent in-app alerts. The scheduler checks thresholds every 15 minutes.';
+      await this.loadNotifications();
+    },
+
     async saveAlert() {
       if (!this.alertForm.location.trim()) return;
       const payload = {
@@ -378,6 +418,7 @@ function caribWeatherApp() {
         const result = await response.json();
         this.alerts.unshift(result.data);
         this.notice = 'Alert subscription saved.';
+        this.loadNotifications();
       } catch (error) {
         this.alerts.unshift({ ...payload, id: crypto.randomUUID(), createdAt: new Date().toISOString() });
         this.notice = 'Alert saved locally because the backend was unavailable.';

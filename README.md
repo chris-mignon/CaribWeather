@@ -41,11 +41,29 @@ The frontend is already wired to backend proxy endpoints:
 - `POST /api/alerts`
 - `PUT /api/alerts/{alert}`
 - `DELETE /api/alerts/{alert}`
+- `GET /api/notifications`
+- `POST /api/notifications/{notification}/read`
 - `GET /api/saved-locations`
 - `POST /api/saved-locations`
 - `DELETE /api/saved-locations/{savedLocation}`
 
-Weather endpoints use Open-Meteo where possible and fall back safely when providers are unavailable. Alerts and saved locations are database-backed and scoped to a browser client ID for guest use, with nullable `user_id` columns ready for authenticated accounts.
+Weather endpoints use Open-Meteo where possible and fall back safely when providers are unavailable. Alerts, saved locations, and in-app alert notifications are database-backed and scoped to a browser client ID for guest use, with nullable `user_id` columns ready for authenticated accounts.
+
+## Alert Scheduler
+
+Run the checker manually during development:
+
+```bash
+php artisan caribweather:check-alerts
+```
+
+Run the Laravel scheduler locally in a second terminal if you want automatic checks every 15 minutes:
+
+```bash
+php artisan schedule:work
+```
+
+In production, configure cron to run `php artisan schedule:run` every minute.
 
 ## Environment Keys
 

@@ -2,11 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Models\AlertSubscription;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class CaribWeatherApiTest extends TestCase
 {
+    use DatabaseTransactions;
+
     public function test_current_weather_endpoint_returns_dashboard_payload(): void
     {
         $response = $this->getJson('/api/weather/current?location=Grenada');
@@ -120,5 +124,40 @@ class CaribWeatherApiTest extends TestCase
             ->getJson('/api/saved-locations')
             ->assertOk()
             ->assertJsonPath('data.0.name', 'St. George\'s, Grenada');
+    }
+
+    public function test_alert_checker_creates_in_app_notifications(): void
+    {
+        $clientId = (string) Str::uuid();
+
+        AlertSubscription::create([
+            'client_id' => $clientId,
+            'location' => 'Grenada',
+            'type' => 'High UV Warning',
+            'threshold' => 'UV Index > 1',
+            'channels' => ['in_app'],
+            'enabled' => true,
+        ]);
+
+        $this->artisan('caribweather:check-alerts')
+            ->expectsOutputToContain('triggered 1')
+            ->assertSuccessful();
+
+        $response = $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->getJson('/api/notifications');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.0.type', 'High UV Warning')
+            ->assertJsonStructure(['data' => [['id', 'message', 'conditionValue', 'threshold', 'readAt']]]);
+
+        $notificationId = $response->json('data.0.id');
+
+        $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->postJson("/api/notifications/{$notificationId}/read")
+            ->assertOk()
+            ->assertJsonPath('data.id', $notificationId);
     }
 }
