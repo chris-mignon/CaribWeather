@@ -1,7 +1,6 @@
 const CACHE_NAME = 'caribweather-v1';
 const APP_SHELL = [
   '/',
-  '/index.html',
   '/offline.html',
   '/manifest.webmanifest',
   '/assets/css/styles.css',

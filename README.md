@@ -1,41 +1,66 @@
 # CaribWeather
 
-CaribWeather is a Progressive Web Application MVP for Caribbean weather monitoring. It implements the frontend experience described in the SRS: a responsive weather dashboard, interactive weather map, AI weather assistant interface, configurable alerts, historical weather analytics, and offline PWA behavior.
+CaribWeather is a Laravel 12 Progressive Web Application MVP for Caribbean weather monitoring. It includes a responsive weather dashboard, Leaflet map, AI assistant interface, alerts manager, historical charts, and PWA offline/install support.
 
-## Current Implementation
+## Stack
 
-- HTML5, CSS3, JavaScript
-- Tailwind CSS CDN for mobile-first layout
-- Alpine.js for lightweight reactivity
-- Leaflet.js with OpenStreetMap tiles
-- Chart.js historical weather charts
-- Web app manifest and service worker for PWA support
-- Backend-ready API boundaries under `/api/...` with mock fallback data when no backend is running
+- PHP 8.3+
+- Laravel 12
+- Laravel Sanctum
+- SQLite for local development, MySQL/MariaDB recommended for production
+- Tailwind CSS CDN for the current MVP UI
+- Alpine.js
+- Leaflet.js
+- Chart.js
+- PWA manifest and service worker
 
-## Running Locally
-
-Use any static web server from the repository root. Service workers require `http://localhost` or HTTPS.
-
-Examples:
+## Local Setup
 
 ```bash
-python -m http.server 8000
+composer install
+npm.cmd install
+copy .env.example .env
+php artisan key:generate
+php artisan migrate
+php artisan serve
 ```
 
-Then open `http://localhost:8000`.
+Open `http://127.0.0.1:8000`.
 
-## Backend Integration Targets
+PowerShell on this machine blocks `npm.ps1`, so use `npm.cmd` instead of `npm`.
 
-The frontend is prepared to call these backend proxy endpoints so third-party API keys remain server-side:
+## API Endpoints
+
+The frontend is already wired to backend proxy endpoints:
 
 - `GET /api/weather/current?location=...`
 - `GET /api/weather/search?q=...`
 - `GET /api/weather/historical?location=...&start=...&end=...`
 - `POST /api/assistant/query`
-- `GET|POST|PUT|DELETE /api/alerts`
+- `GET /api/alerts`
+- `POST /api/alerts`
 
-Recommended production backend: PHP 8.3+, Laravel 12, MySQL/MariaDB, Laravel Sanctum, Scheduler/Queues, and optional Redis caching.
+These endpoints currently return safe MVP fallback data. Next implementation steps are to connect OpenWeatherMap, Open-Meteo Marine, Meteostat, RainViewer, NOAA/NHC, OpenAI, email, and Web Push providers behind these Laravel routes.
 
-## Notes
+## Environment Keys
 
-This workspace does not currently include PHP, Composer, Node, or npm, so the Laravel application could not be scaffolded directly in this environment. The current MVP is a functional frontend/PWA layer designed to plug into that Laravel backend once the tooling is available.
+Add provider keys to `.env` when available:
+
+```env
+OPENWEATHER_API_KEY=
+OPENAI_API_KEY=
+METEOSTAT_API_KEY=
+SENDGRID_API_KEY=
+WEATHER_CACHE_TTL_MINUTES=10
+AI_RATE_LIMIT_PER_HOUR=20
+```
+
+## Verification
+
+Useful commands:
+
+```bash
+php artisan test
+php artisan route:list
+npm.cmd run build
+```
