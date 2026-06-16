@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class CaribWeatherApiTest extends TestCase
@@ -62,5 +63,62 @@ class CaribWeatherApiTest extends TestCase
         $response
             ->assertOk()
             ->assertJsonStructure(['labels', 'highs', 'means', 'lows', 'rainfall', 'wind', 'humidity']);
+    }
+
+    public function test_alert_subscriptions_are_persisted_by_client_id(): void
+    {
+        $clientId = (string) Str::uuid();
+
+        $create = $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->postJson('/api/alerts', [
+                'location' => 'Grenville, Grenada',
+                'latitude' => 12.131,
+                'longitude' => -61.6888,
+                'type' => 'Heavy Rain',
+                'threshold' => 'Rain > 20 mm/hr',
+                'quietHours' => '10:00 PM - 6:00 AM',
+                'channels' => ['in_app', 'email'],
+            ]);
+
+        $create
+            ->assertCreated()
+            ->assertJsonPath('data.location', 'Grenville, Grenada')
+            ->assertJsonPath('data.type', 'Heavy Rain');
+
+        $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->getJson('/api/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.0.location', 'Grenville, Grenada');
+
+        $alertId = $create->json('data.id');
+
+        $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->deleteJson("/api/alerts/{$alertId}")
+            ->assertNoContent();
+    }
+
+    public function test_saved_locations_are_persisted_by_client_id(): void
+    {
+        $clientId = (string) Str::uuid();
+
+        $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->postJson('/api/saved-locations', [
+                'name' => 'St. George\'s, Grenada',
+                'latitude' => 12.0561,
+                'longitude' => -61.7488,
+                'isDefault' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'St. George\'s, Grenada');
+
+        $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->getJson('/api/saved-locations')
+            ->assertOk()
+            ->assertJsonPath('data.0.name', 'St. George\'s, Grenada');
     }
 }

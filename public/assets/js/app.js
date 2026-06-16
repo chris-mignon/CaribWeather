@@ -4,6 +4,7 @@ function caribWeatherApp() {
     navOpen: false,
     online: navigator.onLine,
     notice: '',
+    clientId: localStorage.getItem('cw-client-id') || crypto.randomUUID(),
     unit: localStorage.getItem('cw-unit') || 'metric',
     locationQuery: localStorage.getItem('cw-location') || 'St. George\'s, Grenada',
     selectedCityKey: localStorage.getItem('cw-selected-city') || '',
@@ -144,6 +145,7 @@ function caribWeatherApp() {
     },
 
     init() {
+      localStorage.setItem('cw-client-id', this.clientId);
       const hashView = window.location.hash.replace('#', '');
       if (this.navItems.some((item) => item.id === hashView)) this.activeView = hashView;
       window.addEventListener('online', () => { this.online = true; });
@@ -154,6 +156,7 @@ function caribWeatherApp() {
       });
       this.registerServiceWorker();
       this.refreshWeather();
+      this.loadAlerts();
       this.$watch('activeView', (value) => {
         if (value === 'map') setTimeout(() => this.initMap(), 100);
         if (value === 'analytics') setTimeout(() => this.renderCharts(), 100);
@@ -335,16 +338,75 @@ function caribWeatherApp() {
       }
     },
 
-    saveAlert() {
+    async loadAlerts() {
+      try {
+        const response = await fetch('/api/alerts', {
+          headers: {
+            Accept: 'application/json',
+            'X-CaribWeather-Client': this.clientId
+          }
+        });
+        if (!response.ok) throw new Error('Alerts backend unavailable');
+        const payload = await response.json();
+        this.alerts = payload.data || [];
+        localStorage.setItem('cw-alerts', JSON.stringify(this.alerts));
+      } catch (error) {
+        this.alerts = JSON.parse(localStorage.getItem('cw-alerts') || '[]');
+      }
+    },
+
+    async saveAlert() {
       if (!this.alertForm.location.trim()) return;
-      this.alerts.unshift({ ...this.alertForm, id: crypto.randomUUID(), createdAt: new Date().toISOString() });
+      const payload = {
+        ...this.alertForm,
+        latitude: this.weather.coordinates?.[0] || null,
+        longitude: this.weather.coordinates?.[1] || null,
+        channels: ['in_app', 'email', 'push']
+      };
+
+      try {
+        const response = await fetch('/api/alerts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-CaribWeather-Client': this.clientId
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('Alert save failed');
+        const result = await response.json();
+        this.alerts.unshift(result.data);
+        this.notice = 'Alert subscription saved.';
+      } catch (error) {
+        this.alerts.unshift({ ...payload, id: crypto.randomUUID(), createdAt: new Date().toISOString() });
+        this.notice = 'Alert saved locally because the backend was unavailable.';
+      }
+
       localStorage.setItem('cw-alerts', JSON.stringify(this.alerts));
       this.alertForm.location = this.locationQuery;
     },
 
-    deleteAlert(id) {
+    async deleteAlert(id) {
+      const previous = [...this.alerts];
       this.alerts = this.alerts.filter((alert) => alert.id !== id);
       localStorage.setItem('cw-alerts', JSON.stringify(this.alerts));
+      if (typeof id !== 'number') return;
+
+      try {
+        const response = await fetch(`/api/alerts/${id}`, {
+          method: 'DELETE',
+          headers: {
+            Accept: 'application/json',
+            'X-CaribWeather-Client': this.clientId
+          }
+        });
+        if (!response.ok) throw new Error('Delete failed');
+      } catch (error) {
+        this.alerts = previous;
+        localStorage.setItem('cw-alerts', JSON.stringify(this.alerts));
+        this.notice = 'Could not delete the alert from the backend. Try again.';
+      }
     },
 
     async requestPushPermission() {

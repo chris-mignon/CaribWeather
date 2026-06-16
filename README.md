@@ -39,8 +39,13 @@ The frontend is already wired to backend proxy endpoints:
 - `POST /api/assistant/query`
 - `GET /api/alerts`
 - `POST /api/alerts`
+- `PUT /api/alerts/{alert}`
+- `DELETE /api/alerts/{alert}`
+- `GET /api/saved-locations`
+- `POST /api/saved-locations`
+- `DELETE /api/saved-locations/{savedLocation}`
 
-These endpoints currently return safe MVP fallback data. Next implementation steps are to connect OpenWeatherMap, Open-Meteo Marine, Meteostat, RainViewer, NOAA/NHC, OpenAI, email, and Web Push providers behind these Laravel routes.
+Weather endpoints use Open-Meteo where possible and fall back safely when providers are unavailable. Alerts and saved locations are database-backed and scoped to a browser client ID for guest use, with nullable `user_id` columns ready for authenticated accounts.
 
 ## Environment Keys
 
