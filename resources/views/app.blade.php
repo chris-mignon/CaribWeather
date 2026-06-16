@@ -75,6 +75,13 @@
               <input id="location" x-model="locationQuery" class="min-w-0 flex-1 rounded-2xl border border-white/10 bg-white px-4 py-3 text-slate-950 outline-none ring-cyan-300 focus:ring-4" placeholder="Grenada, Barbados, Castries" autocomplete="off">
               <button class="rounded-2xl bg-sunburst px-4 py-3 font-black text-slate-950 transition hover:bg-amber-300" type="submit">Search</button>
             </div>
+            <label for="city-select" class="mt-3 block text-xs font-bold uppercase tracking-[.2em] text-cyan-100/80">Quick Caribbean City</label>
+            <select id="city-select" x-model="selectedCityKey" class="mt-2 w-full rounded-2xl border border-white/10 bg-white px-4 py-3 text-slate-950 outline-none ring-cyan-300 focus:ring-4" @change="chooseCity()">
+              <option value="">Choose a saved city...</option>
+              <template x-for="city in cityOptions" :key="city.key">
+                <option :value="city.key" x-text="city.name"></option>
+              </template>
+            </select>
             <div class="mt-3 flex flex-wrap gap-2">
               <button type="button" class="rounded-full bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20" @click="useGps()">Use GPS</button>
               <button type="button" class="rounded-full bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20" @click="toggleUnits()">Units: <span x-text="unitLabel"></span></button>
@@ -135,7 +142,7 @@
           </article>
         </div>
 
-        <div class="grid gap-4 xl:grid-cols-[.9fr_1.1fr]">
+        <div class="space-y-4">
           <article class="rounded-[2rem] border border-white/10 bg-white/10 p-5 backdrop-blur">
             <h2 class="text-xl font-black">Next 24 Hours</h2>
             <div class="mt-4 flex gap-3 overflow-x-auto pb-2">

@@ -6,6 +6,7 @@ function caribWeatherApp() {
     notice: '',
     unit: localStorage.getItem('cw-unit') || 'metric',
     locationQuery: localStorage.getItem('cw-location') || 'St. George\'s, Grenada',
+    selectedCityKey: localStorage.getItem('cw-selected-city') || '',
     weather: mockWeather('St. George\'s, Grenada'),
     map: null,
     mapMarker: null,
@@ -38,6 +39,55 @@ function caribWeatherApp() {
       { id: 'assistant', label: 'AI Assistant' },
       { id: 'alerts', label: 'Alerts' },
       { id: 'analytics', label: 'Analytics' }
+    ],
+    cityOptions: [
+      { key: 'all-saints-ag', name: 'All Saints, Antigua and Barbuda', lat: 17.0739, lon: -61.7978 },
+      { key: 'basseterre-kn', name: 'Basseterre, Saint Kitts and Nevis', lat: 17.2955, lon: -62.7266 },
+      { key: 'belmopan-bz', name: 'Belmopan, Belize', lat: 17.2514, lon: -88.7590 },
+      { key: 'belize-city-bz', name: 'Belize City, Belize', lat: 17.5046, lon: -88.1962 },
+      { key: 'bridgetown-bb', name: 'Bridgetown, Barbados', lat: 13.0975, lon: -59.6177 },
+      { key: 'brades-ms', name: 'Brades, Montserrat', lat: 16.7919, lon: -62.2106 },
+      { key: 'camaguey-cu', name: 'Camaguey, Cuba', lat: 21.3808, lon: -77.9169 },
+      { key: 'cap-haitien-ht', name: 'Cap-Haitien, Haiti', lat: 19.7594, lon: -72.2090 },
+      { key: 'castries-lc', name: 'Castries, Saint Lucia', lat: 14.0101, lon: -60.9875 },
+      { key: 'charlotte-amalie-vi', name: 'Charlotte Amalie, U.S. Virgin Islands', lat: 18.3419, lon: -64.9307 },
+      { key: 'cockburn-town-tc', name: 'Cockburn Town, Turks and Caicos Islands', lat: 21.4735, lon: -71.1396 },
+      { key: 'fort-de-france-mq', name: 'Fort-de-France, Martinique', lat: 14.6161, lon: -61.0588 },
+      { key: 'freeport-bs', name: 'Freeport, Bahamas', lat: 26.5333, lon: -78.7000 },
+      { key: 'georgetown-gy', name: 'Georgetown, Guyana', lat: 6.8013, lon: -58.1552 },
+      { key: 'george-town-ky', name: 'George Town, Cayman Islands', lat: 19.2869, lon: -81.3674 },
+      { key: 'gouyave-gd', name: 'Gouyave, Grenada', lat: 12.1696, lon: -61.7297 },
+      { key: 'grenville-gd', name: 'Grenville, Grenada', lat: 12.1310, lon: -61.6888 },
+      { key: 'havana-cu', name: 'Havana, Cuba', lat: 23.1136, lon: -82.3666 },
+      { key: 'kingstown-vc', name: 'Kingstown, Saint Vincent and the Grenadines', lat: 13.1600, lon: -61.2248 },
+      { key: 'kingston-jm', name: 'Kingston, Jamaica', lat: 17.9642, lon: -76.7923 },
+      { key: 'kralendijk-bq', name: 'Kralendijk, Bonaire', lat: 12.1443, lon: -68.2655 },
+      { key: 'marigot-dm', name: 'Marigot, Dominica', lat: 15.5389, lon: -61.3923 },
+      { key: 'marigot-mf', name: 'Marigot, Saint Martin', lat: 18.0663, lon: -63.0822 },
+      { key: 'montego-bay-jm', name: 'Montego Bay, Jamaica', lat: 18.4762, lon: -77.8939 },
+      { key: 'nassau-bs', name: 'Nassau, Bahamas', lat: 25.0343, lon: -77.3963 },
+      { key: 'oistins-bb', name: 'Oistins, Barbados', lat: 13.0650, lon: -59.5338 },
+      { key: 'oranjestad-aw', name: 'Oranjestad, Aruba', lat: 12.5092, lon: -70.0086 },
+      { key: 'paramaribo-sr', name: 'Paramaribo, Suriname', lat: 5.8664, lon: -55.1668 },
+      { key: 'philipsburg-sx', name: 'Philipsburg, Sint Maarten', lat: 18.0075, lon: -63.0413 },
+      { key: 'pointe-a-pitre-gp', name: 'Pointe-a-Pitre, Guadeloupe', lat: 16.2416, lon: -61.5330 },
+      { key: 'port-au-prince-ht', name: 'Port-au-Prince, Haiti', lat: 18.5944, lon: -72.3074 },
+      { key: 'port-of-spain-tt', name: 'Port of Spain, Trinidad and Tobago', lat: 10.6549, lon: -61.5019 },
+      { key: 'providenciales-tc', name: 'Providenciales, Turks and Caicos Islands', lat: 21.7767, lon: -72.2659 },
+      { key: 'road-town-vg', name: 'Road Town, British Virgin Islands', lat: 18.4260, lon: -64.6208 },
+      { key: 'roseau-dm', name: 'Roseau, Dominica', lat: 15.3014, lon: -61.3899 },
+      { key: 'san-ignacio-bz', name: 'San Ignacio, Belize', lat: 17.1612, lon: -89.0636 },
+      { key: 'san-juan-pr', name: 'San Juan, Puerto Rico', lat: 18.4655, lon: -66.1057 },
+      { key: 'santo-domingo-do', name: 'Santo Domingo, Dominican Republic', lat: 18.4861, lon: -69.9312 },
+      { key: 'sauteurs-gd', name: 'Sauteurs, Grenada', lat: 12.2212, lon: -61.6390 },
+      { key: 'scarborough-tt', name: 'Scarborough, Trinidad and Tobago', lat: 11.1853, lon: -60.7390 },
+      { key: 'speightstown-bb', name: 'Speightstown, Barbados', lat: 13.2507, lon: -59.6430 },
+      { key: 'spanish-town-jm', name: 'Spanish Town, Jamaica', lat: 17.9833, lon: -76.9547 },
+      { key: 'st-georges-gd', name: 'St. George\'s, Grenada', lat: 12.0561, lon: -61.7488 },
+      { key: 'st-johns-ag', name: 'St. John\'s, Antigua and Barbuda', lat: 17.1219, lon: -61.8457 },
+      { key: 'the-valley-ai', name: 'The Valley, Anguilla', lat: 18.2170, lon: -63.0578 },
+      { key: 'vieux-fort-lc', name: 'Vieux Fort, Saint Lucia', lat: 13.7166, lon: -60.9471 },
+      { key: 'willemstad-cw', name: 'Willemstad, Curacao', lat: 12.1097, lon: -68.9301 }
     ],
     mapLayers: [
       { id: 'temperature', label: 'Temperature', description: 'Warm oranges indicate higher surface temperatures.' },
@@ -127,22 +177,32 @@ function caribWeatherApp() {
     },
 
     async refreshWeather() {
+      const city = this.cityOptions.find((option) => option.key === this.selectedCityKey);
+      if (city) {
+        this.locationQuery = city.name;
+        await this.fetchWeather(`${city.lat.toFixed(4)}, ${city.lon.toFixed(4)}`, false, city.name);
+        setInterval(() => this.fetchWeather(`${city.lat.toFixed(4)}, ${city.lon.toFixed(4)}`, true, city.name), 10 * 60 * 1000);
+        return;
+      }
+
       await this.fetchWeather(this.locationQuery);
       setInterval(() => this.fetchWeather(this.locationQuery, true), 10 * 60 * 1000);
     },
 
-    async fetchWeather(location, quiet = false) {
+    async fetchWeather(location, quiet = false, label = null) {
       try {
         const response = await fetch(`/api/weather/current?location=${encodeURIComponent(location)}`, {
           headers: { Accept: 'application/json' }
         });
         if (!response.ok) throw new Error('Weather backend unavailable');
         const data = await response.json();
+        if (label) data.location = label;
         this.weather = data;
         this.notice = '';
       } catch (error) {
         const cached = localStorage.getItem(`cw-weather-${location}`);
         this.weather = cached ? JSON.parse(cached) : mockWeather(location);
+        if (label) this.weather.location = label;
         this.weather.cache = true;
         if (!quiet) this.notice = 'Using MVP fallback data until the Laravel API proxy is connected.';
       }
@@ -154,7 +214,18 @@ function caribWeatherApp() {
     searchLocation() {
       const location = this.locationQuery.trim();
       if (!location) return;
+      this.selectedCityKey = '';
+      localStorage.removeItem('cw-selected-city');
       this.fetchWeather(location);
+    },
+
+    chooseCity() {
+      const city = this.cityOptions.find((option) => option.key === this.selectedCityKey);
+      if (!city) return;
+      const coordinateQuery = `${city.lat.toFixed(4)}, ${city.lon.toFixed(4)}`;
+      this.locationQuery = city.name;
+      localStorage.setItem('cw-selected-city', city.key);
+      this.fetchWeather(coordinateQuery, false, city.name);
     },
 
     useGps() {
@@ -165,6 +236,8 @@ function caribWeatherApp() {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
+          this.selectedCityKey = '';
+          localStorage.removeItem('cw-selected-city');
           this.locationQuery = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
           this.weather.coordinates = [latitude, longitude];
           this.fetchWeather(this.locationQuery);
