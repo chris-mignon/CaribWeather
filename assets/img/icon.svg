@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">CaribWeather icon</title>
+  <desc id="desc">Sun, cloud, and wave mark for CaribWeather.</desc>
+  <rect width="512" height="512" rx="108" fill="#0f3b57"/>
+  <circle cx="178" cy="168" r="72" fill="#f59e0b"/>
+  <path fill="#fff" d="M159 298c-42 0-76-31-76-70s34-70 76-70c12 0 24 3 34 8 19-34 56-57 98-57 62 0 112 48 112 108 0 5 0 10-1 15 31 9 53 36 53 68 0 39-34 71-76 71H159c-42 0-76-33-76-73Z" opacity=".92"/>
+  <path fill="#2dd4bf" d="M79 373c46-26 92-26 138 0s92 26 138 0 92-26 138 0v46c-46-26-92-26-138 0s-92 26-138 0-92-26-138 0v-46Z"/>
+</svg>

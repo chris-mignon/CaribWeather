@@ -1,0 +1,33 @@
+{
+  "name": "CaribWeather",
+  "short_name": "CaribWeather",
+  "description": "Caribbean weather dashboard, maps, alerts, AI guidance, and analytics.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#061826",
+  "theme_color": "#0f3b57",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/assets/img/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Weather Map",
+      "short_name": "Map",
+      "url": "/#map",
+      "description": "Open the interactive Caribbean weather map."
+    },
+    {
+      "name": "Alerts",
+      "short_name": "Alerts",
+      "url": "/#alerts",
+      "description": "Manage weather alert subscriptions."
+    }
+  ]
+}
