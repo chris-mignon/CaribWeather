@@ -46,6 +46,15 @@ class CaribWeatherApiTest extends TestCase
             ->assertJsonStructure(['answer', 'source']);
     }
 
+    public function test_location_search_endpoint_returns_results(): void
+    {
+        $response = $this->getJson('/api/weather/search?q=Grenada');
+
+        $response
+            ->assertOk()
+            ->assertJsonStructure(['results' => [['name', 'coordinates']]]);
+    }
+
     public function test_historical_endpoint_returns_chart_payload(): void
     {
         $response = $this->getJson('/api/weather/historical?location=Grenada&start=2026-06-01&end=2026-06-07');

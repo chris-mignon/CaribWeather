@@ -35,4 +35,19 @@ return [
         ],
     ],
 
+    'caribweather' => [
+        'use_live_providers' => env('CARIBWEATHER_USE_LIVE_PROVIDERS', true),
+        'cache_ttl_minutes' => (int) env('WEATHER_CACHE_TTL_MINUTES', 10),
+        'historical_cache_ttl_minutes' => (int) env('HISTORICAL_CACHE_TTL_MINUTES', 60),
+    ],
+
+    'openweather' => [
+        'key' => env('OPENWEATHER_API_KEY'),
+    ],
+
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+        'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+    ],
+
 ];
