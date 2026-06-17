@@ -313,6 +313,7 @@
             <div class="rounded-3xl bg-white p-4"><canvas id="rainfall-chart" height="220"></canvas></div>
             <div class="rounded-3xl bg-white p-4"><canvas id="wind-chart" height="220"></canvas></div>
             <div class="rounded-3xl bg-white p-4"><canvas id="humidity-chart" height="220"></canvas></div>
+            <div class="rounded-3xl bg-white p-4 lg:col-span-2"><canvas id="pressure-chart" height="180"></canvas></div>
           </div>
           <button type="button" class="mt-5 rounded-2xl bg-white px-5 py-3 font-black text-slate-950" @click="exportCsv()">Export CSV</button>
         </div>

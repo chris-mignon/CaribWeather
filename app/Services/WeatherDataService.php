@@ -83,39 +83,18 @@ class WeatherDataService
         $end = $this->cleanDate($end, now()->subDay()->toDateString());
         $ttl = now()->addMinutes(config('services.caribweather.historical_cache_ttl_minutes', 60));
 
-        return Cache::remember('weather.historical.'.sha1($location.'|'.$start.'|'.$end), $ttl, function () use ($location, $start, $end) {
+        $providerKey = config('services.meteostat.key') ? 'meteostat' : 'open-meteo';
+
+        return Cache::remember('weather.historical.'.sha1($providerKey.'|'.$location.'|'.$start.'|'.$end), $ttl, function () use ($location, $start, $end) {
             if (! config('services.caribweather.use_live_providers')) {
                 return $this->fallbackHistorical($location, $start, $end);
             }
 
             try {
                 $place = $this->resolveLocation($location);
-                $response = Http::timeout(10)->get('https://archive-api.open-meteo.com/v1/archive', [
-                    'latitude' => $place['latitude'],
-                    'longitude' => $place['longitude'],
-                    'start_date' => $start,
-                    'end_date' => $end,
-                    'daily' => 'temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,wind_speed_10m_max',
-                    'timezone' => 'auto',
-                ])->throw()->json();
 
-                $daily = $response['daily'] ?? [];
-                $labels = collect($daily['time'] ?? [])->map(fn (string $date) => Carbon::parse($date)->format('M j'))->all();
-
-                return [
-                    'location' => $place['name'],
-                    'start' => $start,
-                    'end' => $end,
-                    'labels' => $labels,
-                    'highs' => $this->numericList($daily['temperature_2m_max'] ?? []),
-                    'means' => $this->numericList($daily['temperature_2m_mean'] ?? []),
-                    'lows' => $this->numericList($daily['temperature_2m_min'] ?? []),
-                    'rainfall' => $this->numericList($daily['precipitation_sum'] ?? []),
-                    'wind' => $this->numericList($daily['wind_speed_10m_max'] ?? []),
-                    'humidity' => array_fill(0, count($labels), null),
-                    'cache' => false,
-                    'source' => 'open-meteo-archive',
-                ];
+                return $this->fetchMeteostatHistorical($place, $start, $end)
+                    ?? $this->fetchOpenMeteoHistorical($place, $start, $end);
             } catch (\Throwable) {
                 return $this->fallbackHistorical($location, $start, $end);
             }
@@ -297,6 +276,95 @@ class WeatherDataService
         }
     }
 
+    private function fetchMeteostatHistorical(array $place, string $start, string $end): ?array
+    {
+        $key = config('services.meteostat.key');
+
+        if (! $key) {
+            return null;
+        }
+
+        try {
+            $client = Http::timeout(12)->withHeaders([
+                'X-RapidAPI-Key' => $key,
+                'X-RapidAPI-Host' => config('services.meteostat.host', 'meteostat.p.rapidapi.com'),
+            ]);
+
+            $baseUrl = rtrim((string) config('services.meteostat.base_url', 'https://meteostat.p.rapidapi.com'), '/');
+            $stationResponse = $client->get($baseUrl.'/stations/nearby', [
+                'lat' => $place['latitude'],
+                'lon' => $place['longitude'],
+                'limit' => 1,
+            ])->throw()->json();
+
+            $stationId = data_get($stationResponse, 'data.0.id');
+            if (! $stationId) {
+                return null;
+            }
+
+            $dailyResponse = $client->get($baseUrl.'/stations/daily', [
+                'station' => $stationId,
+                'start' => $start,
+                'end' => $end,
+            ])->throw()->json();
+
+            $rows = collect($dailyResponse['data'] ?? []);
+            if ($rows->isEmpty()) {
+                return null;
+            }
+
+            return [
+                'location' => $place['name'],
+                'station' => $stationId,
+                'start' => $start,
+                'end' => $end,
+                'labels' => $rows->map(fn (array $row) => Carbon::parse($row['date'])->format('M j'))->all(),
+                'highs' => $this->numericList($rows->pluck('tmax')->all()),
+                'means' => $this->numericList($rows->pluck('tavg')->all()),
+                'lows' => $this->numericList($rows->pluck('tmin')->all()),
+                'rainfall' => $this->numericList($rows->pluck('prcp')->all()),
+                'wind' => $this->numericList($rows->pluck('wspd')->all()),
+                'humidity' => array_fill(0, $rows->count(), null),
+                'pressure' => $this->numericList($rows->pluck('pres')->all()),
+                'cache' => false,
+                'source' => 'meteostat',
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function fetchOpenMeteoHistorical(array $place, string $start, string $end): array
+    {
+        $response = Http::timeout(10)->get('https://archive-api.open-meteo.com/v1/archive', [
+            'latitude' => $place['latitude'],
+            'longitude' => $place['longitude'],
+            'start_date' => $start,
+            'end_date' => $end,
+            'daily' => 'temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,wind_speed_10m_max',
+            'timezone' => 'auto',
+        ])->throw()->json();
+
+        $daily = $response['daily'] ?? [];
+        $labels = collect($daily['time'] ?? [])->map(fn (string $date) => Carbon::parse($date)->format('M j'))->all();
+
+        return [
+            'location' => $place['name'],
+            'start' => $start,
+            'end' => $end,
+            'labels' => $labels,
+            'highs' => $this->numericList($daily['temperature_2m_max'] ?? []),
+            'means' => $this->numericList($daily['temperature_2m_mean'] ?? []),
+            'lows' => $this->numericList($daily['temperature_2m_min'] ?? []),
+            'rainfall' => $this->numericList($daily['precipitation_sum'] ?? []),
+            'wind' => $this->numericList($daily['wind_speed_10m_max'] ?? []),
+            'humidity' => array_fill(0, count($labels), null),
+            'pressure' => array_fill(0, count($labels), null),
+            'cache' => false,
+            'source' => 'open-meteo-archive',
+        ];
+    }
+
     private function fallbackHistorical(string $location, string $start, string $end): array
     {
         return [
@@ -310,6 +378,7 @@ class WeatherDataService
             'rainfall' => [4, 12, 0, 18, 6, 2, 9],
             'wind' => [22, 26, 18, 31, 24, 20, 23],
             'humidity' => [78, 82, 76, 85, 80, 74, 79],
+            'pressure' => [1012, 1011, 1013, 1010, 1012, 1014, 1011],
             'cache' => true,
             'source' => 'fallback',
         ];

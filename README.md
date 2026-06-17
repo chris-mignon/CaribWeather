@@ -47,7 +47,7 @@ The frontend is already wired to backend proxy endpoints:
 - `POST /api/saved-locations`
 - `DELETE /api/saved-locations/{savedLocation}`
 
-Weather endpoints use Open-Meteo where possible and fall back safely when providers are unavailable. Alerts, saved locations, and in-app alert notifications are database-backed and scoped to a browser client ID for guest use, with nullable `user_id` columns ready for authenticated accounts.
+Weather endpoints use Open-Meteo where possible and fall back safely when providers are unavailable. Historical analytics use Meteostat when `METEOSTAT_API_KEY` is configured, then fall back to Open-Meteo Archive. Alerts, saved locations, and in-app alert notifications are database-backed and scoped to a browser client ID for guest use, with nullable `user_id` columns ready for authenticated accounts.
 
 ## Alert Scheduler
 
@@ -73,6 +73,8 @@ Add provider keys to `.env` when available:
 OPENWEATHER_API_KEY=
 OPENAI_API_KEY=
 METEOSTAT_API_KEY=
+METEOSTAT_API_HOST=meteostat.p.rapidapi.com
+METEOSTAT_API_BASE_URL=https://meteostat.p.rapidapi.com
 SENDGRID_API_KEY=
 WEATHER_CACHE_TTL_MINUTES=10
 AI_RATE_LIMIT_PER_HOUR=20

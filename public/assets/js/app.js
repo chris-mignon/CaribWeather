@@ -491,6 +491,9 @@ function caribWeatherApp() {
       this.drawChart('humidity-chart', 'Humidity %', labels, [
         { label: 'Humidity', data: this.historical.humidity, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,.18)', fill: true }
       ]);
+      this.drawChart('pressure-chart', 'Pressure hPa', labels, [
+        { label: 'Pressure', data: this.historical.pressure || [], borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,.16)', fill: true }
+      ]);
     },
 
     drawChart(canvasId, title, labels, datasets, type = 'line') {
@@ -516,7 +519,7 @@ function caribWeatherApp() {
     },
 
     exportCsv() {
-      const rows = [['date', 'high_c', 'mean_c', 'low_c', 'rainfall_mm', 'wind_kph', 'humidity_percent']];
+      const rows = [['date', 'high_c', 'mean_c', 'low_c', 'rainfall_mm', 'wind_kph', 'humidity_percent', 'pressure_hpa']];
       this.historical.labels.forEach((label, index) => {
         rows.push([
           label,
@@ -525,7 +528,8 @@ function caribWeatherApp() {
           this.historical.lows[index],
           this.historical.rainfall[index],
           this.historical.wind[index],
-          this.historical.humidity[index]
+          this.historical.humidity[index],
+          this.historical.pressure?.[index] ?? ''
         ]);
       });
       const blob = new Blob([rows.map((row) => row.join(',')).join('\n')], { type: 'text/csv' });
@@ -592,7 +596,8 @@ function mockHistorical() {
     lows: [25, 25, 24, 24, 25, 26, 25],
     rainfall: [4, 12, 0, 18, 6, 2, 9],
     wind: [22, 26, 18, 31, 24, 20, 23],
-    humidity: [78, 82, 76, 85, 80, 74, 79]
+    humidity: [78, 82, 76, 85, 80, 74, 79],
+    pressure: [1012, 1011, 1013, 1010, 1012, 1014, 1011]
   };
 }
 

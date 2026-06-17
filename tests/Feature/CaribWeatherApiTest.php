@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\AlertSubscription;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -67,6 +69,43 @@ class CaribWeatherApiTest extends TestCase
         $response
             ->assertOk()
             ->assertJsonStructure(['labels', 'highs', 'means', 'lows', 'rainfall', 'wind', 'humidity']);
+    }
+
+    public function test_historical_endpoint_uses_meteostat_when_configured(): void
+    {
+        Cache::flush();
+        config([
+            'services.caribweather.use_live_providers' => true,
+            'services.meteostat.key' => 'test-meteostat-key',
+            'services.meteostat.host' => 'meteostat.p.rapidapi.com',
+            'services.meteostat.base_url' => 'https://meteostat.p.rapidapi.com',
+        ]);
+
+        Http::fake([
+            'meteostat.p.rapidapi.com/stations/nearby*' => Http::response([
+                'data' => [['id' => '78958']],
+            ]),
+            'meteostat.p.rapidapi.com/stations/daily*' => Http::response([
+                'data' => [[
+                    'date' => '2026-06-01',
+                    'tavg' => 28.2,
+                    'tmin' => 24.1,
+                    'tmax' => 31.6,
+                    'prcp' => 5.4,
+                    'wspd' => 18.7,
+                    'pres' => 1012.4,
+                ]],
+            ]),
+        ]);
+
+        $response = $this->getJson('/api/weather/historical?location=12.0561,-61.7488&start=2026-06-01&end=2026-06-01');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('source', 'meteostat')
+            ->assertJsonPath('station', '78958')
+            ->assertJsonPath('highs.0', 31.6)
+            ->assertJsonPath('pressure.0', 1012.4);
     }
 
     public function test_alert_subscriptions_are_persisted_by_client_id(): void

@@ -50,4 +50,10 @@ return [
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
     ],
 
+    'meteostat' => [
+        'key' => env('METEOSTAT_API_KEY'),
+        'host' => env('METEOSTAT_API_HOST', 'meteostat.p.rapidapi.com'),
+        'base_url' => env('METEOSTAT_API_BASE_URL', 'https://meteostat.p.rapidapi.com'),
+    ],
+
 ];
