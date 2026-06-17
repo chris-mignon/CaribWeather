@@ -11,6 +11,10 @@ function caribWeatherApp() {
     weather: mockWeather('St. George\'s, Grenada'),
     map: null,
     mapMarker: null,
+    radarLayer: null,
+    stormLayer: null,
+    weatherPointLayer: null,
+    mapStatus: '',
     activeLayer: 'temperature',
     chartInstances: {},
     assistantQuery: '',
@@ -93,10 +97,10 @@ function caribWeatherApp() {
     ],
     mapLayers: [
       { id: 'temperature', label: 'Temperature', description: 'Warm oranges indicate higher surface temperatures.' },
-      { id: 'rainfall', label: 'Rainfall / Radar', description: 'Blue zones identify likely rainfall and precipitation movement.' },
+      { id: 'rainfall', label: 'Rainfall / Radar', description: 'Live RainViewer radar shows recent precipitation movement.' },
       { id: 'wind', label: 'Wind Speed', description: 'Teal vectors and shading represent wind speed and direction.' },
       { id: 'clouds', label: 'Cloud Coverage', description: 'Grey shading indicates cloud density.' },
-      { id: 'storms', label: 'Tropical Storms', description: 'Storm track overlay placeholder for NOAA/NHC feeds.' }
+      { id: 'storms', label: 'Tropical Storms', description: 'NOAA/NHC active storm positions with advisory links.' }
     ],
     samplePrompts: [
       'Will it rain in Grenville tomorrow?',
@@ -296,6 +300,7 @@ function caribWeatherApp() {
       }
       this.map.invalidateSize();
       this.updateMapMarker();
+      this.setLayer(this.activeLayer);
     },
 
     updateMapMarker() {
@@ -307,18 +312,126 @@ function caribWeatherApp() {
       this.map.setView(this.weather.coordinates, 7);
     },
 
-    setLayer(layer) {
+    async setLayer(layer) {
       this.activeLayer = layer;
-      if (this.map) this.showMapPopup(this.map.getCenter());
+      if (!this.map) return;
+      this.clearMapOverlays();
+      this.mapStatus = '';
+
+      if (layer === 'rainfall') {
+        await this.addRainViewerLayer();
+      } else if (layer === 'storms') {
+        await this.addStormLayer();
+      } else {
+        this.addCurrentWeatherOverlay(layer);
+      }
     },
 
-    showMapPopup(latlng) {
+    clearMapOverlays() {
+      [this.radarLayer, this.stormLayer, this.weatherPointLayer].forEach((layer) => {
+        if (layer && this.map) layer.removeFrom(this.map);
+      });
+      this.radarLayer = null;
+      this.stormLayer = null;
+      this.weatherPointLayer = null;
+    },
+
+    async addRainViewerLayer() {
+      try {
+        this.mapStatus = 'Loading RainViewer radar...';
+        const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+        if (!response.ok) throw new Error('RainViewer unavailable');
+        const data = await response.json();
+        const latest = data.radar?.past?.at(-1) || data.radar?.nowcast?.[0];
+        if (!latest?.path) throw new Error('No radar frame available');
+        this.radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+          opacity: 0.68,
+          attribution: 'Radar: RainViewer'
+        }).addTo(this.map);
+        this.mapStatus = `Radar frame: ${new Date((latest.time || 0) * 1000).toLocaleTimeString()}`;
+      } catch (error) {
+        this.mapStatus = 'RainViewer radar is unavailable right now.';
+      }
+    },
+
+    async addStormLayer() {
+      try {
+        this.mapStatus = 'Loading NOAA/NHC active storms...';
+        const response = await fetch('/api/storms/active', { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error('Storm feed unavailable');
+        const data = await response.json();
+        this.stormLayer = L.layerGroup().addTo(this.map);
+
+        if (!data.storms?.length) {
+          this.mapStatus = 'No active NOAA/NHC storms reported.';
+          return;
+        }
+
+        data.storms.forEach((storm) => {
+          const marker = L.marker([storm.latitude, storm.longitude], {
+            icon: L.divIcon({
+              className: 'storm-marker',
+              html: '<span></span>',
+              iconSize: [28, 28],
+              iconAnchor: [14, 14]
+            })
+          });
+          marker.bindPopup(`
+            <strong>${escapeHtml(storm.name)}</strong><br>
+            ${escapeHtml(storm.classification || 'Active system')} | ${storm.intensity || 'N/A'} kt<br>
+            Pressure: ${storm.pressure || 'N/A'} mb<br>
+            ${storm.publicAdvisoryUrl ? `<a href="${escapeHtml(storm.publicAdvisoryUrl)}" target="_blank" rel="noopener">Public advisory</a>` : ''}
+          `);
+          marker.addTo(this.stormLayer);
+        });
+        this.mapStatus = `${data.storms.length} active NOAA/NHC storm system(s).`;
+      } catch (error) {
+        this.mapStatus = 'NOAA/NHC storm feed is unavailable right now.';
+      }
+    },
+
+    addCurrentWeatherOverlay(layer) {
+      const [lat, lon] = this.weather.coordinates;
+      const label = this.mapLayerValue(layer);
+      this.weatherPointLayer = L.circleMarker([lat, lon], {
+        radius: 18,
+        color: layer === 'temperature' ? '#f97316' : layer === 'wind' ? '#14b8a6' : '#94a3b8',
+        fillColor: layer === 'temperature' ? '#fb923c' : layer === 'wind' ? '#2dd4bf' : '#cbd5e1',
+        fillOpacity: 0.45,
+        weight: 3
+      }).addTo(this.map).bindPopup(`<strong>${escapeHtml(this.weather.location)}</strong><br>${escapeHtml(label)}`);
+      this.mapStatus = 'Click anywhere on the map for point weather lookup.';
+    },
+
+    mapLayerValue(layer) {
+      if (layer === 'temperature') return `Temperature: ${this.displayTemp(this.weather.current.tempC)}`;
+      if (layer === 'wind') return `Wind: ${this.displayWind(this.weather.current.windKph)} ${this.weather.current.windDirection}`;
+      if (layer === 'clouds') return `Cloud cover: ${this.weather.current.cloudCover}%`;
+      return this.activeLayerDescription;
+    },
+
+    async showMapPopup(latlng) {
       if (!this.map || typeof L === 'undefined') return;
-      const layerText = this.activeLayerDescription;
-      L.popup()
+      const popup = L.popup()
         .setLatLng(latlng)
-        .setContent(`<strong>${escapeHtml(this.activeLayer)}</strong><br>${escapeHtml(layerText)}<br>Lat ${latlng.lat.toFixed(3)}, Lng ${latlng.lng.toFixed(3)}`)
+        .setContent(`Loading point weather...<br>Lat ${latlng.lat.toFixed(3)}, Lng ${latlng.lng.toFixed(3)}`)
         .openOn(this.map);
+
+      try {
+        const location = `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
+        const response = await fetch(`/api/weather/current?location=${encodeURIComponent(location)}`, { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error('Point weather unavailable');
+        const data = await response.json();
+        popup.setContent(`
+          <strong>Point Weather</strong><br>
+          ${escapeHtml(data.current.summary)}<br>
+          ${this.displayTemp(data.current.tempC)} | Wind ${this.displayWind(data.current.windKph)}<br>
+          Rain ${data.current.rainChance}% | Clouds ${data.current.cloudCover}%<br>
+          Lat ${latlng.lat.toFixed(3)}, Lng ${latlng.lng.toFixed(3)}
+        `);
+      } catch (error) {
+        popup.setContent(`<strong>${escapeHtml(this.activeLayer)}</strong><br>${escapeHtml(this.activeLayerDescription)}<br>Lat ${latlng.lat.toFixed(3)}, Lng ${latlng.lng.toFixed(3)}`);
+      }
     },
 
     async askAssistant() {

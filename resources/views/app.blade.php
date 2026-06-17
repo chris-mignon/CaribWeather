@@ -186,6 +186,7 @@
             <div class="mt-5 rounded-2xl bg-slate-950/55 p-4">
               <p class="text-sm font-black">Legend</p>
               <p class="mt-1 text-sm text-cyan-50/70" x-text="activeLayerDescription"></p>
+              <p class="mt-2 text-xs font-semibold text-cyan-50/60" x-show="mapStatus" x-text="mapStatus"></p>
             </div>
           </aside>
           <div class="overflow-hidden rounded-[2rem] border border-white/10 bg-white/10 p-3 shadow-2xl">

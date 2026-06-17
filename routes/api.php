@@ -6,6 +6,8 @@ use App\Services\WeatherDataService;
 use App\Models\AlertSubscription;
 use App\Models\SavedLocation;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
@@ -24,6 +26,45 @@ Route::get('/weather/historical', function (Request $request, WeatherDataService
         (string) $request->query('start', now()->subDays(7)->toDateString()),
         (string) $request->query('end', now()->subDay()->toDateString()),
     ));
+});
+
+Route::get('/storms/active', function () {
+    $payload = Cache::remember('storms.active.nhc', now()->addMinutes(10), function () {
+        try {
+            $response = Http::timeout(10)->get('https://www.nhc.noaa.gov/CurrentStorms.json')->throw()->json();
+
+            return [
+                'source' => 'nhc-current-storms',
+                'updatedAt' => now()->toISOString(),
+                'storms' => collect($response['activeStorms'] ?? [])
+                    ->map(fn (array $storm) => [
+                        'id' => $storm['id'] ?? null,
+                        'name' => $storm['name'] ?? 'Unnamed storm',
+                        'classification' => $storm['classification'] ?? null,
+                        'intensity' => isset($storm['intensity']) ? (int) $storm['intensity'] : null,
+                        'pressure' => isset($storm['pressure']) ? (int) $storm['pressure'] : null,
+                        'latitude' => isset($storm['latitudeNumeric']) ? (float) $storm['latitudeNumeric'] : null,
+                        'longitude' => isset($storm['longitudeNumeric']) ? (float) $storm['longitudeNumeric'] : null,
+                        'movementDir' => $storm['movementDir'] ?? null,
+                        'movementSpeed' => $storm['movementSpeed'] ?? null,
+                        'lastUpdate' => $storm['lastUpdate'] ?? null,
+                        'publicAdvisoryUrl' => data_get($storm, 'publicAdvisory.url'),
+                        'forecastGraphicsUrl' => data_get($storm, 'forecastGraphics.url'),
+                    ])
+                    ->filter(fn (array $storm) => $storm['latitude'] !== null && $storm['longitude'] !== null)
+                    ->values()
+                    ->all(),
+            ];
+        } catch (\Throwable) {
+            return [
+                'source' => 'fallback',
+                'updatedAt' => now()->toISOString(),
+                'storms' => [],
+            ];
+        }
+    });
+
+    return response()->json($payload);
 });
 
 Route::post('/assistant/query', function (Request $request, AiAssistantService $assistant, WeatherDataService $weather) {

@@ -108,6 +108,36 @@ class CaribWeatherApiTest extends TestCase
             ->assertJsonPath('pressure.0', 1012.4);
     }
 
+    public function test_active_storm_endpoint_maps_nhc_payload(): void
+    {
+        Cache::flush();
+        Http::fake([
+            'www.nhc.noaa.gov/CurrentStorms.json' => Http::response([
+                'activeStorms' => [[
+                    'id' => 'al012026',
+                    'name' => 'One',
+                    'classification' => 'TS',
+                    'intensity' => '40',
+                    'pressure' => '1002',
+                    'latitudeNumeric' => 15.2,
+                    'longitudeNumeric' => -61.4,
+                    'movementDir' => 280,
+                    'movementSpeed' => 12,
+                    'lastUpdate' => '2026-06-17T00:00:00.000Z',
+                    'publicAdvisory' => ['url' => 'https://www.nhc.noaa.gov/text/test.shtml'],
+                    'forecastGraphics' => ['url' => 'https://www.nhc.noaa.gov/graphics_test.shtml'],
+                ]],
+            ]),
+        ]);
+
+        $this->getJson('/api/storms/active')
+            ->assertOk()
+            ->assertJsonPath('source', 'nhc-current-storms')
+            ->assertJsonPath('storms.0.id', 'al012026')
+            ->assertJsonPath('storms.0.latitude', 15.2)
+            ->assertJsonPath('storms.0.longitude', -61.4);
+    }
+
     public function test_alert_subscriptions_are_persisted_by_client_id(): void
     {
         $clientId = (string) Str::uuid();

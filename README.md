@@ -36,6 +36,7 @@ The frontend is already wired to backend proxy endpoints:
 - `GET /api/weather/current?location=...`
 - `GET /api/weather/search?q=...`
 - `GET /api/weather/historical?location=...&start=...&end=...`
+- `GET /api/storms/active`
 - `POST /api/assistant/query`
 - `GET /api/alerts`
 - `POST /api/alerts`
@@ -48,6 +49,12 @@ The frontend is already wired to backend proxy endpoints:
 - `DELETE /api/saved-locations/{savedLocation}`
 
 Weather endpoints use Open-Meteo where possible and fall back safely when providers are unavailable. Historical analytics use Meteostat when `METEOSTAT_API_KEY` is configured, then fall back to Open-Meteo Archive. Alerts, saved locations, and in-app alert notifications are database-backed and scoped to a browser client ID for guest use, with nullable `user_id` columns ready for authenticated accounts.
+
+## Map Layers
+
+- Rainfall / Radar uses RainViewer public radar tiles.
+- Tropical Storms uses the NOAA/NHC `CurrentStorms.json` feed through the Laravel proxy.
+- Temperature, wind, and cloud layers show the selected location signal and support click-to-query point weather through `/api/weather/current`.
 
 ## Alert Scheduler
 
