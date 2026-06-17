@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Mail\WeatherAlertTriggered;
 use App\Models\AlertSubscription;
+use App\Models\PushSubscription;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -140,6 +143,23 @@ class CaribWeatherApiTest extends TestCase
             ->assertJsonPath('storms.0.longitude', -61.4);
     }
 
+    public function test_openweather_tile_proxy_returns_png_when_key_configured(): void
+    {
+        config(['services.openweather.key' => 'test-openweather-key']);
+        Http::fake([
+            'tile.openweathermap.org/map/temp_new/4/5/6.png*' => Http::response('png-bytes', 200, [
+                'Content-Type' => 'image/png',
+            ]),
+        ]);
+
+        $response = $this->get('/api/map/tiles/temp_new/4/5/6.png');
+
+        $response
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertSee('png-bytes');
+    }
+
     public function test_user_can_register_and_access_authenticated_profile(): void
     {
         $register = $this->postJson('/api/auth/register', [
@@ -158,6 +178,29 @@ class CaribWeatherApiTest extends TestCase
             ->getJson('/api/auth/user')
             ->assertOk()
             ->assertJsonPath('user.email', 'carib.user@example.com');
+    }
+
+    public function test_push_subscription_is_stored_for_guest_client(): void
+    {
+        $clientId = (string) Str::uuid();
+
+        $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->postJson('/api/push-subscriptions', [
+                'endpoint' => 'https://push.example.com/subscription/1',
+                'keys' => [
+                    'p256dh' => 'public-key',
+                    'auth' => 'auth-token',
+                ],
+                'contentEncoding' => 'aes128gcm',
+            ])
+            ->assertCreated()
+            ->assertJsonStructure(['data' => ['id']]);
+
+        $this->assertDatabaseHas('push_subscriptions', [
+            'client_id' => $clientId,
+            'endpoint' => 'https://push.example.com/subscription/1',
+        ]);
     }
 
     public function test_user_can_login_and_create_user_scoped_alert(): void
@@ -327,5 +370,30 @@ class CaribWeatherApiTest extends TestCase
             ->postJson("/api/notifications/{$notificationId}/read")
             ->assertOk()
             ->assertJsonPath('data.id', $notificationId);
+    }
+
+    public function test_alert_checker_sends_email_for_user_email_channel(): void
+    {
+        Mail::fake();
+        $user = User::create([
+            'name' => 'Email Alert User',
+            'email' => 'email.alert@example.com',
+            'password' => Hash::make('password123'),
+        ]);
+
+        AlertSubscription::create([
+            'user_id' => $user->id,
+            'location' => 'Grenada',
+            'type' => 'High UV Warning',
+            'threshold' => 'UV Index > 1',
+            'channels' => ['in_app', 'email'],
+            'enabled' => true,
+        ]);
+
+        $this->artisan('caribweather:check-alerts')->assertSuccessful();
+
+        Mail::assertSent(WeatherAlertTriggered::class, function (WeatherAlertTriggered $mail) use ($user) {
+            return $mail->hasTo($user->email) && $mail->alert->type === 'High UV Warning';
+        });
     }
 }

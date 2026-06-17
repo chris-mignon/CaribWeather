@@ -62,12 +62,26 @@
     </header>
 
     <main id="main" class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-      <section class="mb-6 overflow-hidden rounded-[2rem] border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur md:p-8">
-        <div class="grid gap-6 lg:grid-cols-[1.35fr_.65fr] lg:items-end">
+      <section class="mb-6 overflow-hidden rounded-[2.25rem] border border-white/10 bg-white/10 p-5 shadow-2xl shadow-cyan-950/40 backdrop-blur md:p-8">
+        <div class="grid gap-6 lg:grid-cols-[1.2fr_.8fr] lg:items-start">
           <div>
             <p class="mb-3 inline-flex rounded-full bg-cyan-300/15 px-3 py-1 text-sm font-bold text-cyan-100 ring-1 ring-cyan-200/20">Live Caribbean conditions, marine safety, and tropical awareness</p>
             <h1 class="text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">Weather built for island decisions.</h1>
             <p class="mt-4 max-w-3xl text-base leading-7 text-cyan-50/80">Monitor current conditions, forecasts, marine data, storm layers, AI-assisted guidance, alerts, and historical climate trends from one installable PWA.</p>
+            <div class="mt-6 grid gap-3 sm:grid-cols-3">
+              <div class="rounded-3xl border border-white/10 bg-white/10 p-4">
+                <p class="text-2xl font-black">Live</p>
+                <p class="text-xs font-bold uppercase tracking-[.2em] text-cyan-100/70">Weather APIs</p>
+              </div>
+              <div class="rounded-3xl border border-white/10 bg-white/10 p-4">
+                <p class="text-2xl font-black">PWA</p>
+                <p class="text-xs font-bold uppercase tracking-[.2em] text-cyan-100/70">Offline Ready</p>
+              </div>
+              <div class="rounded-3xl border border-white/10 bg-white/10 p-4">
+                <p class="text-2xl font-black">Alerts</p>
+                <p class="text-xs font-bold uppercase tracking-[.2em] text-cyan-100/70">Scheduler Backed</p>
+              </div>
+            </div>
           </div>
           <form class="rounded-3xl border border-white/10 bg-slate-950/45 p-4" @submit.prevent="searchLocation()">
             <label for="location" class="text-sm font-bold text-cyan-50">Location</label>
@@ -85,7 +99,22 @@
             <div class="mt-3 flex flex-wrap gap-2">
               <button type="button" class="rounded-full bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20" @click="useGps()">Use GPS</button>
               <button type="button" class="rounded-full bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20" @click="toggleUnits()">Units: <span x-text="unitLabel"></span></button>
+              <button type="button" class="rounded-full bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/20" @click="saveCurrentLocation()">Save Location</button>
               <span class="rounded-full bg-emerald-400/15 px-3 py-2 text-sm font-semibold text-emerald-100" x-text="online ? 'Online' : 'Offline cache mode'"></span>
+            </div>
+            <div class="mt-4 rounded-2xl bg-white/10 p-3" x-show="savedLocations.length > 0">
+              <div class="mb-2 flex items-center justify-between gap-3">
+                <p class="text-xs font-black uppercase tracking-[.2em] text-cyan-100">Saved Locations</p>
+                <button type="button" class="text-xs font-black text-reef" @click="loadSavedLocations()">Refresh</button>
+              </div>
+              <div class="grid gap-2">
+                <template x-for="location in savedLocations" :key="location.id">
+                  <div class="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-slate-950">
+                    <button type="button" class="min-w-0 flex-1 truncate text-left text-sm font-bold" @click="useSavedLocation(location)" x-text="location.name"></button>
+                    <button type="button" class="rounded-full bg-rose-100 px-2 py-1 text-xs font-black text-rose-700" @click="deleteSavedLocation(location.id)">Delete</button>
+                  </div>
+                </template>
+              </div>
             </div>
           </form>
           <section class="rounded-3xl border border-white/10 bg-white/10 p-4 backdrop-blur" aria-label="Account access">
@@ -122,7 +151,7 @@
 
       <section x-show="activeView === 'dashboard'" x-transition>
         <div class="mb-5 grid gap-4 lg:grid-cols-[1.05fr_.95fr]">
-          <article class="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white p-6 text-slate-950 shadow-2xl">
+          <article class="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white p-6 text-slate-950 shadow-2xl shadow-cyan-950/30">
             <div class="absolute right-0 top-0 h-44 w-44 rounded-bl-full bg-cyan-100"></div>
             <div class="relative">
               <div class="flex flex-wrap items-start justify-between gap-4">

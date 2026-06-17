@@ -1,4 +1,4 @@
-const CACHE_NAME = 'caribweather-v6';
+const CACHE_NAME = 'caribweather-v7';
 const APP_SHELL = [
   '/',
   '/offline.html',
@@ -36,6 +36,30 @@ self.addEventListener('fetch', (event) => {
       return response;
     }).catch(() => caches.match('/offline.html')))
   );
+});
+
+self.addEventListener('push', (event) => {
+  let payload = { title: 'CaribWeather Alert', body: 'A weather alert was triggered.' };
+  if (event.data) {
+    try {
+      payload = event.data.json();
+    } catch (error) {
+      payload.body = event.data.text();
+    }
+  }
+
+  event.waitUntil(self.registration.showNotification(payload.title || 'CaribWeather Alert', {
+    body: payload.body || payload.message || 'A weather alert was triggered.',
+    icon: '/assets/img/icon.svg',
+    badge: '/assets/img/icon.svg',
+    data: { url: payload.url || '/#alerts' }
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || '/#alerts';
+  event.waitUntil(clients.openWindow(url));
 });
 
 async function networkFirst(request) {

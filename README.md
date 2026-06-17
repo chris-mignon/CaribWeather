@@ -37,6 +37,7 @@ The frontend is already wired to backend proxy endpoints:
 - `GET /api/weather/search?q=...`
 - `GET /api/weather/historical?location=...&start=...&end=...`
 - `GET /api/storms/active`
+- `GET /api/map/tiles/{layer}/{z}/{x}/{y}`
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `GET /api/auth/user`
@@ -48,6 +49,8 @@ The frontend is already wired to backend proxy endpoints:
 - `DELETE /api/alerts/{alert}`
 - `GET /api/notifications`
 - `POST /api/notifications/{notification}/read`
+- `GET /api/push/vapid-public-key`
+- `POST /api/push-subscriptions`
 - `GET /api/saved-locations`
 - `POST /api/saved-locations`
 - `DELETE /api/saved-locations/{savedLocation}`
@@ -61,6 +64,19 @@ Guest alerts and saved locations are automatically claimed by the account when t
 - Rainfall / Radar uses RainViewer public radar tiles.
 - Tropical Storms uses the NOAA/NHC `CurrentStorms.json` feed through the Laravel proxy.
 - Temperature, wind, and cloud layers show the selected location signal and support click-to-query point weather through `/api/weather/current`.
+- Temperature, wind, cloud, precipitation, and pressure tile requests are proxied through Laravel when `OPENWEATHER_API_KEY` is configured, keeping the key server-side.
+
+## Web Push
+
+Browser push subscription storage is implemented. To enable actual browser push delivery, configure VAPID keys:
+
+```env
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=${APP_URL}
+```
+
+The alert checker sends Web Push notifications to matching subscriptions when an alert channel includes `push` and VAPID keys are present.
 
 ## Alert Scheduler
 

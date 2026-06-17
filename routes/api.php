@@ -4,6 +4,7 @@ use App\Services\AiAssistantService;
 use App\Models\AlertNotification;
 use App\Services\WeatherDataService;
 use App\Models\AlertSubscription;
+use App\Models\PushSubscription;
 use App\Models\SavedLocation;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -29,6 +30,25 @@ Route::get('/weather/historical', function (Request $request, WeatherDataService
         (string) $request->query('end', now()->subDay()->toDateString()),
     ));
 });
+
+Route::get('/map/tiles/{layer}/{z}/{x}/{y}', function (string $layer, int $z, int $x, string $y) {
+    $key = config('services.openweather.key');
+    $allowedLayers = ['clouds_new', 'precipitation_new', 'temp_new', 'wind_new', 'pressure_new'];
+
+    abort_unless($key && in_array($layer, $allowedLayers, true), 404);
+
+    $tileY = Str::before($y, '.');
+    abort_unless(is_numeric($tileY), 404);
+
+    $response = Http::timeout(10)->get("https://tile.openweathermap.org/map/{$layer}/{$z}/{$x}/{$tileY}.png", [
+        'appid' => $key,
+    ])->throw();
+
+    return response($response->body(), 200, [
+        'Content-Type' => 'image/png',
+        'Cache-Control' => 'public, max-age=600',
+    ]);
+})->where(['y' => '.*']);
 
 Route::get('/storms/active', function () {
     $payload = Cache::remember('storms.active.nhc', now()->addMinutes(10), function () {
@@ -117,12 +137,37 @@ Route::post('/assistant/query', function (Request $request, AiAssistantService $
         'history' => ['nullable', 'array'],
     ]);
 
-    return response()->json($assistant->answer(
-        $validated['query'],
-        $validated['context'] ?? $weather->current("St. George's, Grenada"),
-        $validated['history'] ?? [],
-    ));
+    $context = $validated['context'] ?? caribweather_context_for_query($validated['query'], $weather);
+
+    return response()->json($assistant->answer($validated['query'], $context, $validated['history'] ?? []));
 })->middleware('throttle:20,60');
+
+Route::get('/push/vapid-public-key', fn () => response()->json([
+    'publicKey' => config('services.webpush.public_key'),
+]));
+
+Route::post('/push-subscriptions', function (Request $request) {
+    $user = caribweather_user($request);
+    $validated = $request->validate([
+        'endpoint' => ['required', 'url', 'max:2000'],
+        'keys.p256dh' => ['required', 'string'],
+        'keys.auth' => ['required', 'string'],
+        'contentEncoding' => ['nullable', 'string', 'max:40'],
+    ]);
+
+    $subscription = PushSubscription::updateOrCreate(
+        ['endpoint' => $validated['endpoint']],
+        [
+            'user_id' => $user?->id,
+            'client_id' => $user ? null : caribweather_client_id($request),
+            'public_key' => $validated['keys']['p256dh'],
+            'auth_token' => $validated['keys']['auth'],
+            'content_encoding' => $validated['contentEncoding'] ?? 'aes128gcm',
+        ],
+    );
+
+    return response()->json(['data' => ['id' => $subscription->id]], 201);
+});
 
 Route::get('/alerts', function (Request $request) {
     $user = caribweather_user($request);
@@ -316,6 +361,36 @@ if (! function_exists('caribweather_claim_client_records')) {
         AlertSubscription::where('client_id', $clientId)->update(['user_id' => $user->id, 'client_id' => null]);
         SavedLocation::where('client_id', $clientId)->update(['user_id' => $user->id, 'client_id' => null]);
         AlertNotification::where('client_id', $clientId)->update(['user_id' => $user->id, 'client_id' => null]);
+        PushSubscription::where('client_id', $clientId)->update(['user_id' => $user->id, 'client_id' => null]);
+    }
+}
+
+if (! function_exists('caribweather_context_for_query')) {
+    function caribweather_context_for_query(string $query, WeatherDataService $weather): array
+    {
+        $locations = [
+            'grenville' => 'Grenville, Grenada',
+            'grenada' => "St. George's, Grenada",
+            'barbados' => 'Bridgetown, Barbados',
+            'bridgetown' => 'Bridgetown, Barbados',
+            'castries' => 'Castries, Saint Lucia',
+            'saint lucia' => 'Castries, Saint Lucia',
+            'kingston' => 'Kingston, Jamaica',
+            'jamaica' => 'Kingston, Jamaica',
+            'trinidad' => 'Port of Spain, Trinidad and Tobago',
+            'tobago' => 'Scarborough, Trinidad and Tobago',
+            'san juan' => 'San Juan, Puerto Rico',
+            'puerto rico' => 'San Juan, Puerto Rico',
+        ];
+
+        $lower = Str::lower($query);
+        foreach ($locations as $needle => $location) {
+            if (Str::contains($lower, $needle)) {
+                return $weather->current($location);
+            }
+        }
+
+        return $weather->current("St. George's, Grenada");
     }
 }
 

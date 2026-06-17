@@ -23,11 +23,13 @@ function caribWeatherApp() {
     radarLayer: null,
     stormLayer: null,
     weatherPointLayer: null,
+    weatherTileLayer: null,
     mapStatus: '',
     activeLayer: 'temperature',
     chartInstances: {},
     assistantQuery: '',
     notifications: [],
+    savedLocations: [],
     chat: [
       {
         id: crypto.randomUUID(),
@@ -105,10 +107,10 @@ function caribWeatherApp() {
       { key: 'willemstad-cw', name: 'Willemstad, Curacao', lat: 12.1097, lon: -68.9301 }
     ],
     mapLayers: [
-      { id: 'temperature', label: 'Temperature', description: 'Warm oranges indicate higher surface temperatures.' },
+      { id: 'temperature', label: 'Temperature', description: 'OpenWeather temperature tiles plus selected-location reading.' },
       { id: 'rainfall', label: 'Rainfall / Radar', description: 'Live RainViewer radar shows recent precipitation movement.' },
-      { id: 'wind', label: 'Wind Speed', description: 'Teal vectors and shading represent wind speed and direction.' },
-      { id: 'clouds', label: 'Cloud Coverage', description: 'Grey shading indicates cloud density.' },
+      { id: 'wind', label: 'Wind Speed', description: 'OpenWeather wind tiles plus selected-location wind reading.' },
+      { id: 'clouds', label: 'Cloud Coverage', description: 'OpenWeather cloud tiles plus selected-location cloud coverage.' },
       { id: 'storms', label: 'Tropical Storms', description: 'NOAA/NHC active storm positions with advisory links.' }
     ],
     samplePrompts: [
@@ -173,6 +175,7 @@ function caribWeatherApp() {
       this.refreshWeather();
       this.loadAlerts();
       this.loadNotifications();
+      this.loadSavedLocations();
       this.$watch('activeView', (value) => {
         if (value === 'map') setTimeout(() => this.initMap(), 100);
         if (value === 'analytics') setTimeout(() => this.renderCharts(), 100);
@@ -235,6 +238,7 @@ function caribWeatherApp() {
         this.notice = `Signed in as ${this.currentUser.name}.`;
         await this.loadAlerts();
         await this.loadNotifications();
+        await this.loadSavedLocations();
       } catch (error) {
         this.authError = error.message;
       }
@@ -253,6 +257,7 @@ function caribWeatherApp() {
       this.notice = 'Signed out. Guest alerts are stored on this browser.';
       await this.loadAlerts();
       await this.loadNotifications();
+      await this.loadSavedLocations();
     },
 
     async registerServiceWorker() {
@@ -407,12 +412,13 @@ function caribWeatherApp() {
     },
 
     clearMapOverlays() {
-      [this.radarLayer, this.stormLayer, this.weatherPointLayer].forEach((layer) => {
+      [this.radarLayer, this.stormLayer, this.weatherPointLayer, this.weatherTileLayer].forEach((layer) => {
         if (layer && this.map) layer.removeFrom(this.map);
       });
       this.radarLayer = null;
       this.stormLayer = null;
       this.weatherPointLayer = null;
+      this.weatherTileLayer = null;
     },
 
     async addRainViewerLayer() {
@@ -470,6 +476,14 @@ function caribWeatherApp() {
     },
 
     addCurrentWeatherOverlay(layer) {
+      const tileLayer = { temperature: 'temp_new', wind: 'wind_new', clouds: 'clouds_new' }[layer];
+      if (tileLayer) {
+        this.weatherTileLayer = L.tileLayer(`/api/map/tiles/${tileLayer}/{z}/{x}/{y}.png`, {
+          opacity: 0.55,
+          attribution: 'Weather tiles: OpenWeather'
+        }).addTo(this.map);
+      }
+
       const [lat, lon] = this.weather.coordinates;
       const label = this.mapLayerValue(layer);
       this.weatherPointLayer = L.circleMarker([lat, lon], {
@@ -479,7 +493,9 @@ function caribWeatherApp() {
         fillOpacity: 0.45,
         weight: 3
       }).addTo(this.map).bindPopup(`<strong>${escapeHtml(this.weather.location)}</strong><br>${escapeHtml(label)}`);
-      this.mapStatus = 'Click anywhere on the map for point weather lookup.';
+      this.mapStatus = tileLayer
+        ? 'Live tile layer enabled. Click anywhere for point weather lookup.'
+        : 'Click anywhere on the map for point weather lookup.';
     },
 
     mapLayerValue(layer) {
@@ -543,6 +559,60 @@ function caribWeatherApp() {
         localStorage.setItem('cw-alerts', JSON.stringify(this.alerts));
       } catch (error) {
         this.alerts = JSON.parse(localStorage.getItem('cw-alerts') || '[]');
+      }
+    },
+
+    async loadSavedLocations() {
+      try {
+        const response = await fetch('/api/saved-locations', { headers: this.apiHeaders() });
+        if (!response.ok) throw new Error('Saved locations unavailable');
+        const payload = await response.json();
+        this.savedLocations = payload.data || [];
+      } catch (error) {
+        this.savedLocations = [];
+      }
+    },
+
+    async saveCurrentLocation() {
+      const coordinates = this.weather.coordinates || [];
+      if (coordinates.length < 2) return;
+      try {
+        const response = await fetch('/api/saved-locations', {
+          method: 'POST',
+          headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            name: this.weather.location || this.locationQuery,
+            latitude: coordinates[0],
+            longitude: coordinates[1],
+            isDefault: this.savedLocations.length === 0
+          })
+        });
+        if (!response.ok) throw new Error('Could not save location');
+        this.notice = 'Location saved.';
+        await this.loadSavedLocations();
+      } catch (error) {
+        this.notice = error.message;
+      }
+    },
+
+    async useSavedLocation(location) {
+      this.selectedCityKey = '';
+      this.locationQuery = location.name;
+      await this.fetchWeather(`${Number(location.latitude).toFixed(4)}, ${Number(location.longitude).toFixed(4)}`, false, location.name);
+    },
+
+    async deleteSavedLocation(id) {
+      const previous = [...this.savedLocations];
+      this.savedLocations = this.savedLocations.filter((location) => location.id !== id);
+      try {
+        const response = await fetch(`/api/saved-locations/${id}`, {
+          method: 'DELETE',
+          headers: this.apiHeaders()
+        });
+        if (!response.ok) throw new Error('Could not delete saved location');
+      } catch (error) {
+        this.savedLocations = previous;
+        this.notice = error.message;
       }
     },
 
@@ -632,9 +702,30 @@ function caribWeatherApp() {
         return;
       }
       const permission = await Notification.requestPermission();
-      this.notice = permission === 'granted'
-        ? 'Push permission granted. Laravel Web Push can now subscribe this device.'
-        : 'Push notification permission was not granted.';
+      if (permission !== 'granted') {
+        this.notice = 'Push notification permission was not granted.';
+        return;
+      }
+
+      try {
+        const keyResponse = await fetch('/api/push/vapid-public-key', { headers: this.apiHeaders() });
+        const keyPayload = await keyResponse.json();
+        if (!keyPayload.publicKey) throw new Error('VAPID public key is not configured yet.');
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyPayload.publicKey)
+        });
+        const response = await fetch('/api/push-subscriptions', {
+          method: 'POST',
+          headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(subscription.toJSON())
+        });
+        if (!response.ok) throw new Error('Could not save push subscription.');
+        this.notice = 'Push notifications are enabled for this browser.';
+      } catch (error) {
+        this.notice = error.message;
+      }
     },
 
     async loadHistorical() {
@@ -821,4 +912,17 @@ function escapeHtml(value) {
     "'": '&#39;',
     '"': '&quot;'
   }[char]));
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; i++) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+
+  return outputArray;
 }

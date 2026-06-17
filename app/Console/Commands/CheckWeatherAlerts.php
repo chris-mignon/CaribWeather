@@ -2,13 +2,17 @@
 
 namespace App\Console\Commands;
 
+use App\Mail\WeatherAlertTriggered;
 use App\Models\AlertNotification;
 use App\Models\AlertSubscription;
+use App\Models\PushSubscription;
 use App\Services\WeatherDataService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Minishlink\WebPush\Subscription;
+use Minishlink\WebPush\WebPush;
 
 class CheckWeatherAlerts extends Command
 {
@@ -110,9 +114,60 @@ class CheckWeatherAlerts extends Command
         $alert->forceFill(['last_triggered_at' => now()])->save();
 
         if (in_array('email', $channels, true) && $alert->user?->email) {
-            Mail::raw($result['message'], function ($message) use ($alert) {
-                $message->to($alert->user->email)->subject('CaribWeather Alert: '.$alert->type);
-            });
+            Mail::to($alert->user->email)->send(new WeatherAlertTriggered($alert, $result['message']));
+        }
+
+        if (in_array('push', $channels, true)) {
+            $this->sendPushNotifications($alert, $result['message']);
+        }
+    }
+
+    private function sendPushNotifications(AlertSubscription $alert, string $message): void
+    {
+        $publicKey = config('services.webpush.public_key');
+        $privateKey = config('services.webpush.private_key');
+
+        if (! $publicKey || ! $privateKey) {
+            return;
+        }
+
+        $subscriptions = PushSubscription::query()
+            ->when($alert->user_id, fn ($query) => $query->where('user_id', $alert->user_id))
+            ->when(! $alert->user_id, fn ($query) => $query->where('client_id', $alert->client_id))
+            ->get();
+
+        if ($subscriptions->isEmpty()) {
+            return;
+        }
+
+        $webPush = new WebPush([
+            'VAPID' => [
+                'subject' => config('services.webpush.subject'),
+                'publicKey' => $publicKey,
+                'privateKey' => $privateKey,
+            ],
+        ]);
+
+        foreach ($subscriptions as $subscription) {
+            $webPush->queueNotification(
+                Subscription::create([
+                    'endpoint' => $subscription->endpoint,
+                    'publicKey' => $subscription->public_key,
+                    'authToken' => $subscription->auth_token,
+                    'contentEncoding' => $subscription->content_encoding,
+                ]),
+                json_encode([
+                    'title' => 'CaribWeather Alert: '.$alert->type,
+                    'body' => $message,
+                    'url' => '/#alerts',
+                ]),
+            );
+        }
+
+        foreach ($webPush->flush() as $report) {
+            if (! $report->isSuccess()) {
+                PushSubscription::where('endpoint', $report->getEndpoint())->delete();
+            }
         }
     }
 
