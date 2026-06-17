@@ -60,7 +60,7 @@ php artisan caribweather:check-alerts
 Run the Laravel scheduler locally in a second terminal if you want automatic checks every 15 minutes:
 
 ```bash
-php artisan schedule:work
+.\schedule.cmd
 ```
 
 In production, configure cron to run `php artisan schedule:run` every minute.
