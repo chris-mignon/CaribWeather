@@ -88,6 +88,33 @@
               <span class="rounded-full bg-emerald-400/15 px-3 py-2 text-sm font-semibold text-emerald-100" x-text="online ? 'Online' : 'Offline cache mode'"></span>
             </div>
           </form>
+          <section class="rounded-3xl border border-white/10 bg-white/10 p-4 backdrop-blur" aria-label="Account access">
+            <template x-if="currentUser">
+              <div>
+                <p class="text-xs font-black uppercase tracking-[.22em] text-cyan-100">Signed In</p>
+                <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p class="font-black" x-text="currentUser.name"></p>
+                    <p class="text-sm text-cyan-50/70" x-text="currentUser.email"></p>
+                  </div>
+                  <button type="button" class="rounded-full bg-white px-4 py-2 text-sm font-black text-slate-950" @click="logout()">Logout</button>
+                </div>
+              </div>
+            </template>
+            <template x-if="!currentUser">
+              <form @submit.prevent="submitAuth()">
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-sm font-black text-cyan-50" x-text="authMode === 'login' ? 'Sign in to sync alerts' : 'Create an account'"></p>
+                  <button type="button" class="text-xs font-black text-reef" @click="authMode = authMode === 'login' ? 'register' : 'login'; authError = ''" x-text="authMode === 'login' ? 'Register' : 'Login'"></button>
+                </div>
+                <input x-show="authMode === 'register'" x-model="authForm.name" class="mt-3 w-full rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm text-slate-950 outline-none ring-cyan-300 focus:ring-4" placeholder="Full name" autocomplete="name">
+                <input x-model="authForm.email" type="email" class="mt-3 w-full rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm text-slate-950 outline-none ring-cyan-300 focus:ring-4" placeholder="Email" autocomplete="email">
+                <input x-model="authForm.password" type="password" class="mt-3 w-full rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm text-slate-950 outline-none ring-cyan-300 focus:ring-4" placeholder="Password" autocomplete="current-password">
+                <p x-show="authError" x-text="authError" class="mt-2 text-sm font-semibold text-amber-100"></p>
+                <button type="submit" class="mt-3 w-full rounded-2xl bg-reef px-4 py-3 font-black text-slate-950" x-text="authMode === 'login' ? 'Login' : 'Create Account'"></button>
+              </form>
+            </template>
+          </section>
         </div>
       </section>
 

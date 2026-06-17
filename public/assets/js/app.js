@@ -5,6 +5,15 @@ function caribWeatherApp() {
     online: navigator.onLine,
     notice: '',
     clientId: localStorage.getItem('cw-client-id') || crypto.randomUUID(),
+    authToken: localStorage.getItem('cw-auth-token') || '',
+    currentUser: JSON.parse(localStorage.getItem('cw-user') || 'null'),
+    authMode: 'login',
+    authError: '',
+    authForm: {
+      name: '',
+      email: '',
+      password: ''
+    },
     unit: localStorage.getItem('cw-unit') || 'metric',
     locationQuery: localStorage.getItem('cw-location') || 'St. George\'s, Grenada',
     selectedCityKey: localStorage.getItem('cw-selected-city') || '',
@@ -160,6 +169,7 @@ function caribWeatherApp() {
         if (this.navItems.some((item) => item.id === view)) this.activeView = view;
       });
       this.registerServiceWorker();
+      this.loadCurrentUser();
       this.refreshWeather();
       this.loadAlerts();
       this.loadNotifications();
@@ -174,6 +184,75 @@ function caribWeatherApp() {
     setView(view) {
       this.activeView = view;
       history.replaceState(null, '', `#${view}`);
+    },
+
+    apiHeaders(extra = {}) {
+      const headers = {
+        Accept: 'application/json',
+        'X-CaribWeather-Client': this.clientId,
+        ...extra
+      };
+      if (this.authToken) headers.Authorization = `Bearer ${this.authToken}`;
+      return headers;
+    },
+
+    async loadCurrentUser() {
+      if (!this.authToken) return;
+      try {
+        const response = await fetch('/api/auth/user', { headers: this.apiHeaders() });
+        if (!response.ok) throw new Error('Session expired');
+        const payload = await response.json();
+        this.currentUser = payload.user;
+        localStorage.setItem('cw-user', JSON.stringify(this.currentUser));
+      } catch (error) {
+        this.authToken = '';
+        this.currentUser = null;
+        localStorage.removeItem('cw-auth-token');
+        localStorage.removeItem('cw-user');
+      }
+    },
+
+    async submitAuth() {
+      this.authError = '';
+      const endpoint = this.authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const payload = this.authMode === 'login'
+        ? { email: this.authForm.email, password: this.authForm.password }
+        : this.authForm;
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || 'Authentication failed');
+        this.authToken = result.token;
+        this.currentUser = result.user;
+        localStorage.setItem('cw-auth-token', this.authToken);
+        localStorage.setItem('cw-user', JSON.stringify(this.currentUser));
+        this.authForm.password = '';
+        this.notice = `Signed in as ${this.currentUser.name}.`;
+        await this.loadAlerts();
+        await this.loadNotifications();
+      } catch (error) {
+        this.authError = error.message;
+      }
+    },
+
+    async logout() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST', headers: this.apiHeaders() });
+      } catch (error) {
+        // Local logout still clears the token if the network is unavailable.
+      }
+      this.authToken = '';
+      this.currentUser = null;
+      localStorage.removeItem('cw-auth-token');
+      localStorage.removeItem('cw-user');
+      this.notice = 'Signed out. Guest alerts are stored on this browser.';
+      await this.loadAlerts();
+      await this.loadNotifications();
     },
 
     async registerServiceWorker() {
@@ -456,10 +535,7 @@ function caribWeatherApp() {
     async loadAlerts() {
       try {
         const response = await fetch('/api/alerts', {
-          headers: {
-            Accept: 'application/json',
-            'X-CaribWeather-Client': this.clientId
-          }
+          headers: this.apiHeaders()
         });
         if (!response.ok) throw new Error('Alerts backend unavailable');
         const payload = await response.json();
@@ -473,10 +549,7 @@ function caribWeatherApp() {
     async loadNotifications() {
       try {
         const response = await fetch('/api/notifications', {
-          headers: {
-            Accept: 'application/json',
-            'X-CaribWeather-Client': this.clientId
-          }
+          headers: this.apiHeaders()
         });
         if (!response.ok) throw new Error('Notifications backend unavailable');
         const payload = await response.json();
@@ -490,10 +563,7 @@ function caribWeatherApp() {
       try {
         const response = await fetch(`/api/notifications/${id}/read`, {
           method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'X-CaribWeather-Client': this.clientId
-          }
+          headers: this.apiHeaders()
         });
         if (!response.ok) throw new Error('Could not mark notification read');
         const payload = await response.json();
@@ -520,11 +590,7 @@ function caribWeatherApp() {
       try {
         const response = await fetch('/api/alerts', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-CaribWeather-Client': this.clientId
-          },
+          headers: this.apiHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(payload)
         });
         if (!response.ok) throw new Error('Alert save failed');
@@ -550,10 +616,7 @@ function caribWeatherApp() {
       try {
         const response = await fetch(`/api/alerts/${id}`, {
           method: 'DELETE',
-          headers: {
-            Accept: 'application/json',
-            'X-CaribWeather-Client': this.clientId
-          }
+          headers: this.apiHeaders()
         });
         if (!response.ok) throw new Error('Delete failed');
       } catch (error) {

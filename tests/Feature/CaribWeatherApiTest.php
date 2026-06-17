@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\AlertSubscription;
+use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -136,6 +138,103 @@ class CaribWeatherApiTest extends TestCase
             ->assertJsonPath('storms.0.id', 'al012026')
             ->assertJsonPath('storms.0.latitude', 15.2)
             ->assertJsonPath('storms.0.longitude', -61.4);
+    }
+
+    public function test_user_can_register_and_access_authenticated_profile(): void
+    {
+        $register = $this->postJson('/api/auth/register', [
+            'name' => 'Carib User',
+            'email' => 'carib.user@example.com',
+            'password' => 'password123',
+        ]);
+
+        $register
+            ->assertCreated()
+            ->assertJsonPath('user.email', 'carib.user@example.com')
+            ->assertJsonStructure(['user' => ['id', 'name', 'email'], 'token']);
+
+        $this
+            ->withToken($register->json('token'))
+            ->getJson('/api/auth/user')
+            ->assertOk()
+            ->assertJsonPath('user.email', 'carib.user@example.com');
+    }
+
+    public function test_user_can_login_and_create_user_scoped_alert(): void
+    {
+        $user = User::create([
+            'name' => 'Alert Owner',
+            'email' => 'alert.owner@example.com',
+            'password' => Hash::make('password123'),
+        ]);
+
+        $login = $this->postJson('/api/auth/login', [
+            'email' => 'alert.owner@example.com',
+            'password' => 'password123',
+        ]);
+
+        $login->assertOk()->assertJsonStructure(['token', 'user']);
+
+        $this
+            ->withToken($login->json('token'))
+            ->postJson('/api/alerts', [
+                'location' => 'Bridgetown, Barbados',
+                'type' => 'High Winds',
+                'threshold' => 'Wind > 25 km/h',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.location', 'Bridgetown, Barbados');
+
+        $this->assertDatabaseHas('alert_subscriptions', [
+            'user_id' => $user->id,
+            'client_id' => null,
+            'location' => 'Bridgetown, Barbados',
+        ]);
+
+        $this
+            ->withToken($login->json('token'))
+            ->getJson('/api/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.0.location', 'Bridgetown, Barbados');
+    }
+
+    public function test_login_claims_existing_guest_records_for_that_browser(): void
+    {
+        $clientId = (string) Str::uuid();
+        $user = User::create([
+            'name' => 'Guest Claim',
+            'email' => 'guest.claim@example.com',
+            'password' => Hash::make('password123'),
+        ]);
+
+        AlertSubscription::create([
+            'client_id' => $clientId,
+            'location' => 'Grenville, Grenada',
+            'type' => 'High UV Warning',
+            'threshold' => 'UV > 8',
+            'enabled' => true,
+        ]);
+
+        $login = $this
+            ->withHeader('X-CaribWeather-Client', $clientId)
+            ->postJson('/api/auth/login', [
+                'email' => 'guest.claim@example.com',
+                'password' => 'password123',
+            ]);
+
+        $login->assertOk();
+
+        $this->assertDatabaseHas('alert_subscriptions', [
+            'user_id' => $user->id,
+            'client_id' => null,
+            'location' => 'Grenville, Grenada',
+        ]);
+
+        $this
+            ->withToken($login->json('token'))
+            ->getJson('/api/alerts')
+            ->assertOk()
+            ->assertJsonPath('data.0.location', 'Grenville, Grenada');
     }
 
     public function test_alert_subscriptions_are_persisted_by_client_id(): void

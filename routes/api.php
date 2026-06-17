@@ -5,8 +5,10 @@ use App\Models\AlertNotification;
 use App\Services\WeatherDataService;
 use App\Models\AlertSubscription;
 use App\Models\SavedLocation;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Arr;
@@ -67,6 +69,47 @@ Route::get('/storms/active', function () {
     return response()->json($payload);
 });
 
+Route::post('/auth/register', function (Request $request) {
+    $validated = $request->validate([
+        'name' => ['required', 'string', 'max:120'],
+        'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+        'password' => ['required', 'string', 'min:8'],
+    ]);
+
+    $user = User::create($validated);
+    caribweather_claim_client_records($request, $user);
+    $token = $user->createToken('caribweather-pwa')->plainTextToken;
+
+    return response()->json(['user' => caribweather_user_payload($user), 'token' => $token], 201);
+})->middleware('throttle:5,1');
+
+Route::post('/auth/login', function (Request $request) {
+    $validated = $request->validate([
+        'email' => ['required', 'email'],
+        'password' => ['required', 'string'],
+    ]);
+
+    $user = User::where('email', $validated['email'])->first();
+    if (! $user || ! Hash::check($validated['password'], $user->password)) {
+        return response()->json(['message' => 'Invalid email or password.'], 422);
+    }
+
+    $token = $user->createToken('caribweather-pwa')->plainTextToken;
+    caribweather_claim_client_records($request, $user);
+
+    return response()->json(['user' => caribweather_user_payload($user), 'token' => $token]);
+})->middleware('throttle:5,1');
+
+Route::get('/auth/user', function (Request $request) {
+    return response()->json(['user' => caribweather_user_payload($request->user())]);
+})->middleware('auth:sanctum');
+
+Route::post('/auth/logout', function (Request $request) {
+    $request->user()->currentAccessToken()?->delete();
+
+    return response()->noContent();
+})->middleware('auth:sanctum');
+
 Route::post('/assistant/query', function (Request $request, AiAssistantService $assistant, WeatherDataService $weather) {
     $validated = $request->validate([
         'query' => ['required', 'string', 'max:1000'],
@@ -82,13 +125,14 @@ Route::post('/assistant/query', function (Request $request, AiAssistantService $
 })->middleware('throttle:20,60');
 
 Route::get('/alerts', function (Request $request) {
-    $clientId = $request->user() ? null : caribweather_client_id($request);
+    $user = caribweather_user($request);
+    $clientId = $user ? null : caribweather_client_id($request);
 
     return response()->json([
         'data' => AlertSubscription::query()
             ->where(fn ($query) => $query
-                ->when($request->user(), fn ($query, $user) => $query->where('user_id', $user->id))
-                ->when(! $request->user(), fn ($query) => $query->where('client_id', $clientId))
+                ->when($user, fn ($query, $user) => $query->where('user_id', $user->id))
+                ->when(! $user, fn ($query) => $query->where('client_id', $clientId))
             )
             ->latest()
             ->get()
@@ -97,6 +141,7 @@ Route::get('/alerts', function (Request $request) {
 });
 
 Route::post('/alerts', function (Request $request) {
+    $user = caribweather_user($request);
     $validated = $request->validate([
         'location' => ['required', 'string', 'max:120'],
         'latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -108,8 +153,8 @@ Route::post('/alerts', function (Request $request) {
     ]);
 
     $alert = AlertSubscription::create([
-        'user_id' => $request->user()?->id,
-        'client_id' => $request->user() ? null : caribweather_client_id($request),
+        'user_id' => $user?->id,
+        'client_id' => $user ? null : caribweather_client_id($request),
         'location' => $validated['location'],
         'latitude' => $validated['latitude'] ?? null,
         'longitude' => $validated['longitude'] ?? null,
@@ -154,13 +199,14 @@ Route::delete('/alerts/{alert}', function (Request $request, AlertSubscription $
 });
 
 Route::get('/notifications', function (Request $request) {
-    $clientId = $request->user() ? null : caribweather_client_id($request);
+    $user = caribweather_user($request);
+    $clientId = $user ? null : caribweather_client_id($request);
 
     return response()->json([
         'data' => AlertNotification::query()
             ->where(fn ($query) => $query
-                ->when($request->user(), fn ($query, $user) => $query->where('user_id', $user->id))
-                ->when(! $request->user(), fn ($query) => $query->where('client_id', $clientId))
+                ->when($user, fn ($query, $user) => $query->where('user_id', $user->id))
+                ->when(! $user, fn ($query) => $query->where('client_id', $clientId))
             )
             ->latest()
             ->limit(20)
@@ -178,13 +224,14 @@ Route::post('/notifications/{notification}/read', function (Request $request, Al
 });
 
 Route::get('/saved-locations', function (Request $request) {
-    $clientId = $request->user() ? null : caribweather_client_id($request);
+    $user = caribweather_user($request);
+    $clientId = $user ? null : caribweather_client_id($request);
 
     return response()->json([
         'data' => SavedLocation::query()
             ->where(fn ($query) => $query
-                ->when($request->user(), fn ($query, $user) => $query->where('user_id', $user->id))
-                ->when(! $request->user(), fn ($query) => $query->where('client_id', $clientId))
+                ->when($user, fn ($query, $user) => $query->where('user_id', $user->id))
+                ->when(! $user, fn ($query) => $query->where('client_id', $clientId))
             )
             ->orderByDesc('is_default')
             ->orderBy('name')
@@ -193,6 +240,7 @@ Route::get('/saved-locations', function (Request $request) {
 });
 
 Route::post('/saved-locations', function (Request $request) {
+    $user = caribweather_user($request);
     $validated = $request->validate([
         'name' => ['required', 'string', 'max:120'],
         'latitude' => ['required', 'numeric', 'between:-90,90'],
@@ -200,16 +248,16 @@ Route::post('/saved-locations', function (Request $request) {
         'isDefault' => ['nullable', 'boolean'],
     ]);
 
-    $clientId = $request->user() ? null : caribweather_client_id($request);
+    $clientId = $user ? null : caribweather_client_id($request);
     if ($validated['isDefault'] ?? false) {
         SavedLocation::query()
-            ->when($request->user(), fn ($query, $user) => $query->where('user_id', $user->id))
-            ->when(! $request->user(), fn ($query) => $query->where('client_id', $clientId))
+            ->when($user, fn ($query, $user) => $query->where('user_id', $user->id))
+            ->when(! $user, fn ($query) => $query->where('client_id', $clientId))
             ->update(['is_default' => false]);
     }
 
     $location = SavedLocation::create([
-        'user_id' => $request->user()?->id,
+        'user_id' => $user?->id,
         'client_id' => $clientId,
         'name' => $validated['name'],
         'latitude' => $validated['latitude'],
@@ -239,11 +287,44 @@ if (! function_exists('caribweather_client_id')) {
     }
 }
 
+if (! function_exists('caribweather_user')) {
+    function caribweather_user(Request $request): ?User
+    {
+        return $request->bearerToken() ? auth('sanctum')->user() : null;
+    }
+}
+
+if (! function_exists('caribweather_user_payload')) {
+    function caribweather_user_payload(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+        ];
+    }
+}
+
+if (! function_exists('caribweather_claim_client_records')) {
+    function caribweather_claim_client_records(Request $request, User $user): void
+    {
+        $clientId = (string) $request->header('X-CaribWeather-Client', '');
+        if (! Str::isUuid($clientId)) {
+            return;
+        }
+
+        AlertSubscription::where('client_id', $clientId)->update(['user_id' => $user->id, 'client_id' => null]);
+        SavedLocation::where('client_id', $clientId)->update(['user_id' => $user->id, 'client_id' => null]);
+        AlertNotification::where('client_id', $clientId)->update(['user_id' => $user->id, 'client_id' => null]);
+    }
+}
+
 if (! function_exists('caribweather_owns_record')) {
     function caribweather_owns_record(Request $request, AlertSubscription|SavedLocation|AlertNotification $record): bool
     {
-        if ($request->user()) {
-            return $record->user_id === $request->user()->id;
+        $user = caribweather_user($request);
+        if ($user) {
+            return $record->user_id === $user->id;
         }
 
         return $record->client_id === caribweather_client_id($request);
