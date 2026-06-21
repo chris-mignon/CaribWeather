@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\AiAssistantService;
+use App\Services\NhcStormGeometryService;
 use App\Models\AlertNotification;
 use App\Services\WeatherDataService;
 use App\Models\AlertSubscription;
@@ -86,6 +87,11 @@ Route::get('/storms/active', function () {
         }
     });
 
+    return response()->json($payload);
+});
+
+Route::get('/storms/active-geojson', function (NhcStormGeometryService $storms) {
+    $payload = Cache::remember('storms.active.nhc.geojson', now()->addMinutes(10), fn () => $storms->activeGeoJson());
     return response()->json($payload);
 });
 

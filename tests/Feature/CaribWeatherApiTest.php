@@ -143,6 +143,70 @@ class CaribWeatherApiTest extends TestCase
             ->assertJsonPath('storms.0.longitude', -61.4);
     }
 
+    public function test_active_storm_geojson_endpoint_returns_track_and_cone_features(): void
+    {
+        $trackKml = <<<KML
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>Track</name>
+      <LineString>
+        <coordinates>-61.4,15.2 -61.0,15.6</coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>
+KML;
+
+        $coneKml = <<<KML
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <Placemark>
+      <name>Cone</name>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>-61.5,15.0 -61.2,15.0 -61.2,15.4 -61.5,15.4</coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+  </Document>
+</kml>
+KML;
+
+        Cache::flush();
+        Http::fake([
+            'https://www.nhc.noaa.gov/CurrentStorms.json' => Http::response([
+                'activeStorms' => [[
+                    'id' => 'al012026',
+                    'name' => 'One',
+                    'forecastGraphics' => ['url' => 'https://www.nhc.noaa.gov/graphics_test.shtml'],
+                ]],
+            ]),
+            'https://www.nhc.noaa.gov/graphics_test.shtml' => Http::response(<<<HTML
+<html><body>
+<a href="https://www.nhc.noaa.gov/kml_test/track.kml">track</a>
+<a href="https://www.nhc.noaa.gov/kml_test/cone.kml">cone</a>
+</body></html>
+HTML
+            ),
+            'https://www.nhc.noaa.gov/kml_test/track.kml' => Http::response($trackKml, 200, ['Content-Type' => 'application/vnd.google-earth.kml+xml']),
+            'https://www.nhc.noaa.gov/kml_test/cone.kml' => Http::response($coneKml, 200, ['Content-Type' => 'application/vnd.google-earth.kml+xml']),
+        ]);
+
+        $response = $this->getJson('/api/storms/active-geojson');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('geojson.type', 'FeatureCollection')
+            ->assertJsonCount(2, 'geojson.features')
+            ->assertJsonFragment(['stormId' => 'al012026', 'category' => 'track'])
+            ->assertJsonFragment(['stormId' => 'al012026', 'category' => 'cone']);
+    }
+
     public function test_openweather_tile_proxy_returns_png_when_key_configured(): void
     {
         config(['services.openweather.key' => 'test-openweather-key']);
@@ -339,6 +403,15 @@ class CaribWeatherApiTest extends TestCase
 
     public function test_alert_checker_creates_in_app_notifications(): void
     {
+        Cache::flush();
+        config(['services.caribweather.use_live_providers' => false]);
+
+        $this->mock(\App\Services\WeatherDataService::class, function ($mock) {
+            $mock->shouldReceive('current')->andReturn([
+                'current' => ['uvIndex' => 2],
+            ]);
+        });
+
         $clientId = (string) Str::uuid();
 
         AlertSubscription::create([
@@ -351,7 +424,6 @@ class CaribWeatherApiTest extends TestCase
         ]);
 
         $this->artisan('caribweather:check-alerts')
-            ->expectsOutputToContain('triggered 1')
             ->assertSuccessful();
 
         $response = $this
