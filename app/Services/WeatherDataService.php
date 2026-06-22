@@ -11,6 +11,10 @@ use Illuminate\Support\Str;
 
 class WeatherDataService
 {
+    public function __construct(private readonly GoogleAirQualityService $googleAirQuality)
+    {
+    }
+
     public function current(string $location): array
     {
         $location = $this->cleanLocation($location);
@@ -255,6 +259,19 @@ class WeatherDataService
 
     private function fetchAirQuality(float $latitude, float $longitude): array
     {
+        // Prefer Google Air Quality when configured.
+        if (config('services.google.key')) {
+            try {
+                $rawAqi = $this->googleAirQuality->currentRawAqi($latitude, $longitude);
+                if ($rawAqi !== null) {
+                    $scale = $this->googleRawAqiToScale($rawAqi);
+                    return ['value' => $scale, 'advisory' => $this->aqiAdvisory($scale)];
+                }
+            } catch (\Throwable) {
+                // fall through to OpenWeather
+            }
+        }
+
         $key = config('services.openweather.key');
 
         if (! $key) {
@@ -274,6 +291,18 @@ class WeatherDataService
         } catch (\Throwable) {
             return ['value' => 42, 'advisory' => 'AQI provider unavailable; showing fallback advisory.'];
         }
+    }
+
+    private function googleRawAqiToScale(int $rawAqi): int
+    {
+        // Generic AQI (0-500) to our 1..5 buckets (matches existing UI expectations).
+        return match (true) {
+            $rawAqi <= 50 => 1,
+            $rawAqi <= 100 => 2,
+            $rawAqi <= 150 => 3,
+            $rawAqi <= 200 => 4,
+            default => 5,
+        };
     }
 
     private function fetchMeteostatHistorical(array $place, string $start, string $end): ?array

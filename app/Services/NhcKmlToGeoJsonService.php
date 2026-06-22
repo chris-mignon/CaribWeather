@@ -9,35 +9,45 @@ class NhcKmlToGeoJsonService
     public function convertToFeatures(string $payload, string $sourceUrl, array $context): array
     {
         $lowerUrl = strtolower($sourceUrl);
-        $kml = str_ends_with($lowerUrl, '.kmz')
-            ? $this->extractKmlFromKmz($payload)
-            : $payload;
+        $kmlDocuments = str_ends_with($lowerUrl, '.kmz')
+            ? $this->extractKmlsFromKmz($payload)
+            : [$payload];
 
-        if ($kml === '') {
+        if (count($kmlDocuments) === 0) {
             return [];
         }
 
-        return $this->parseKmlToFeatures($kml, $context);
+        $features = [];
+        foreach ($kmlDocuments as $kml) {
+            $features = array_merge($features, $this->parseKmlToFeatures($kml, $context));
+        }
+
+        return $features;
     }
 
-    private function extractKmlFromKmz(string $kmzBinary): string
+    /**
+     * Extract all KML entries from a KMZ archive.
+     *
+     * @return array<int, string>
+     */
+    private function extractKmlsFromKmz(string $kmzBinary): array
     {
         if ($kmzBinary === '') {
-            return '';
+            return [];
         }
 
         $tmpKmz = tempnam(sys_get_temp_dir(), 'caribweather_kmz_');
         if ($tmpKmz === false) {
-            return '';
+            return [];
         }
 
-        $tmpKmlContent = '';
+        $kmlDocs = [];
         try {
             file_put_contents($tmpKmz, $kmzBinary);
 
             $zip = new ZipArchive();
             if ($zip->open($tmpKmz) !== true) {
-                return '';
+                return [];
             }
 
             for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -52,15 +62,14 @@ class NhcKmlToGeoJsonService
 
                 $contents = $zip->getFromIndex($i);
                 if (is_string($contents) && $contents !== '') {
-                    $tmpKmlContent = $contents;
-                    break;
+                    $kmlDocs[] = $contents;
                 }
             }
         } finally {
             @unlink($tmpKmz);
         }
 
-        return $tmpKmlContent;
+        return $kmlDocs;
     }
 
     private function parseKmlToFeatures(string $kml, array $context): array
@@ -81,11 +90,11 @@ class NhcKmlToGeoJsonService
         foreach ($placemarks as $pm) {
             $pmName = $this->firstTextByLocalName($pm, 'name');
 
-            $coordsNode = $pm->xpath('.//*[local-name()="Point"]/*[local-name()="coordinates"]');
-            if (is_array($coordsNode) && isset($coordsNode[0])) {
-                $coord = $this->parseCoordinateListToLonLatPairs(trim((string) $coordsNode[0]));
-                if (count($coord) > 0) {
-                    [$lon, $lat] = $coord[0];
+            $pointCoordsNodes = $pm->xpath('.//*[local-name()="Point"]/*[local-name()="coordinates"]') ?: [];
+            foreach ($pointCoordsNodes as $node) {
+                $coordPairs = $this->parseCoordinateListToLonLatPairs(trim((string) $node));
+                if (count($coordPairs) >= 1) {
+                    [$lon, $lat] = $coordPairs[0];
                     $features[] = [
                         'type' => 'Feature',
                         'properties' => [
@@ -101,12 +110,11 @@ class NhcKmlToGeoJsonService
                         ],
                     ];
                 }
-                continue;
             }
 
-            $lineCoordsNode = $pm->xpath('.//*[local-name()="LineString"]/*[local-name()="coordinates"]');
-            if (is_array($lineCoordsNode) && isset($lineCoordsNode[0])) {
-                $pairs = $this->parseCoordinateListToLonLatPairs(trim((string) $lineCoordsNode[0]));
+            $lineCoordsNodes = $pm->xpath('.//*[local-name()="LineString"]/*[local-name()="coordinates"]') ?: [];
+            foreach ($lineCoordsNodes as $node) {
+                $pairs = $this->parseCoordinateListToLonLatPairs(trim((string) $node));
                 if (count($pairs) >= 2) {
                     $features[] = [
                         'type' => 'Feature',
@@ -123,12 +131,11 @@ class NhcKmlToGeoJsonService
                         ],
                     ];
                 }
-                continue;
             }
 
-            $outerPolyCoordsNode = $pm->xpath('.//*[local-name()="Polygon"]//*[local-name()="outerBoundaryIs"]//*[local-name()="coordinates"]');
-            if (is_array($outerPolyCoordsNode) && isset($outerPolyCoordsNode[0])) {
-                $pairs = $this->parseCoordinateListToLonLatPairs(trim((string) $outerPolyCoordsNode[0]));
+            $outerPolyCoordsNodes = $pm->xpath('.//*[local-name()="Polygon"]//*[local-name()="outerBoundaryIs"]//*[local-name()="coordinates"]') ?: [];
+            foreach ($outerPolyCoordsNodes as $node) {
+                $pairs = $this->parseCoordinateListToLonLatPairs(trim((string) $node));
                 if (count($pairs) >= 3) {
                     $ring = array_map(fn (array $p) => [$p[0], $p[1]], $pairs);
                     if ($ring[0] !== $ring[count($ring) - 1]) {

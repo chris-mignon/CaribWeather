@@ -242,6 +242,32 @@
             <div class="mt-5 rounded-2xl bg-slate-950/55 p-4">
               <p class="text-sm font-black">Legend</p>
               <p class="mt-1 text-sm text-cyan-50/70" x-text="activeLayerDescription"></p>
+
+              <template x-if="activeLayer === 'storms'">
+                <div class="mt-4 space-y-3">
+                  <label class="flex items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2">
+                    <span class="text-xs font-black uppercase tracking-[.18em] text-cyan-100">Tracks / Cones</span>
+                    <input type="checkbox" class="h-4 w-4 accent-cyan-300" x-model="stormGeometryEnabled" @change="reloadStormGeometry()">
+                  </label>
+
+                  <div class="space-y-2">
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="flex items-center gap-2">
+                        <span class="inline-block h-3 w-10 rounded bg-fuchsia-400/80"></span>
+                        <span class="text-xs font-semibold text-cyan-50/80">Track</span>
+                      </div>
+                      <span class="text-xs text-cyan-50/60">LineString</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="flex items-center gap-2">
+                        <span class="inline-block h-3 w-10 rounded bg-sky-400/80"></span>
+                        <span class="text-xs font-semibold text-cyan-50/80">Cone</span>
+                      </div>
+                      <span class="text-xs text-cyan-50/60">Polygon</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
               <p class="mt-2 text-xs font-semibold text-cyan-50/60" x-show="mapStatus" x-text="mapStatus"></p>
             </div>
           </aside>

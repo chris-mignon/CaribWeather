@@ -22,6 +22,8 @@ function caribWeatherApp() {
     mapMarker: null,
     radarLayer: null,
     stormLayer: null,
+    stormGeometryLayer: null,
+    stormGeometryEnabled: true,
     weatherPointLayer: null,
     weatherTileLayer: null,
     mapStatus: '',
@@ -422,6 +424,19 @@ function caribWeatherApp() {
       this.weatherTileLayer = null;
     },
 
+    reloadStormGeometry() {
+      if (!this.map || this.activeLayer !== 'storms') return;
+      if (this.stormGeometryLayer) this.stormGeometryLayer.removeFrom(this.map);
+      this.stormGeometryLayer = null;
+      if (!this.stormGeometryEnabled) {
+        this.mapStatus = 'Tracks/cones hidden.';
+        return;
+      }
+
+      // Geometry is drawn inside addStormLayer(); here we just force a refresh.
+      this.addStormLayer();
+    },
+
     async addRainViewerLayer() {
       try {
         this.mapStatus = 'Loading RainViewer radar...';
@@ -471,38 +486,47 @@ function caribWeatherApp() {
           marker.addTo(this.stormLayer);
         });
 
+        if (!this.stormGeometryEnabled) {
+          this.mapStatus = `${data.storms.length} active NOAA/NHC storm system(s). Tracks/cones hidden.`;
+          return;
+        }
+
         // Draw storm tracks / cones (GeoJSON) if available.
         try {
           const geoResponse = await fetch('/api/storms/active-geojson', { headers: { Accept: 'application/json' } });
-          if (geoResponse.ok) {
-            const geoData = await geoResponse.json();
-            if (geoData?.geojson?.features?.length) {
-              const styles = {
-                track: { color: '#fb7185', weight: 3, opacity: 0.85 },
-                cone: { color: '#60a5fa', weight: 2, opacity: 0.9, fillColor: '#60a5fa', fillOpacity: 0.18 },
-                unknown: { color: '#94a3b8', weight: 2, opacity: 0.7 },
-              };
+          if (!geoResponse.ok) throw new Error('GeoJSON unavailable');
 
-              const getStyle = (feature) => styles[feature?.properties?.category] || styles.unknown;
+          const geoData = await geoResponse.json();
+          const features = geoData?.geojson?.features || [];
+          if (features.length) {
+            const styles = {
+              track: { color: '#fb7185', weight: 3, opacity: 0.85 },
+              cone: { color: '#60a5fa', weight: 2, opacity: 0.9, fillColor: '#60a5fa', fillOpacity: 0.18 },
+              unknown: { color: '#94a3b8', weight: 2, opacity: 0.7 },
+            };
 
-              this.stormGeometryLayer = L.geoJSON(geoData.geojson, {
-                style: (feature) => {
-                  const s = getStyle(feature);
-                  // Leaflet only respects fill* on polygons.
-                  if (feature?.geometry?.type === 'Polygon') return s;
-                  return { ...s, fillOpacity: 0 };
-                },
-                pointToLayer: (feature, latlng) => {
-                  const s = getStyle(feature);
-                  return L.circleMarker(latlng, { radius: 6, color: s.color, weight: 2, fillOpacity: 0.6 });
-                },
-              }).addTo(this.map);
-            }
+            const getStyle = (feature) => styles[feature?.properties?.category] || styles.unknown;
+
+            this.stormGeometryLayer = L.geoJSON(geoData.geojson, {
+              style: (feature) => {
+                const s = getStyle(feature);
+                // Leaflet only respects fill* on polygons.
+                if (feature?.geometry?.type === 'Polygon') return s;
+                return { ...s, fillOpacity: 0 };
+              },
+              pointToLayer: (feature, latlng) => {
+                const s = getStyle(feature);
+                return L.circleMarker(latlng, { radius: 6, color: s.color, weight: 2, fillOpacity: 0.6 });
+              },
+            }).addTo(this.map);
+
+            this.mapStatus = `${data.storms.length} active NOAA/NHC storm system(s). Geometry loaded (${features.length} feature(s)).`;
+          } else {
+            this.mapStatus = `${data.storms.length} active NOAA/NHC storm system(s). Track/cone geometry unavailable right now.`;
           }
         } catch (e) {
-          // Geometry is optional; marker feed remains the baseline.
+          this.mapStatus = `${data.storms.length} active NOAA/NHC storm system(s). Track/cone geometry unavailable right now.`;
         }
-        this.mapStatus = `${data.storms.length} active NOAA/NHC storm system(s).`;
       } catch (error) {
         this.mapStatus = 'NOAA/NHC storm feed is unavailable right now.';
       }
