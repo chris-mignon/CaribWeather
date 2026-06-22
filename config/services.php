@@ -47,6 +47,7 @@ return [
 
     'google' => [
         'key' => env('GOOGLE_API_KEY'),
+        'air_quality_token' => env('GOOGLE_AIR_QUALITY_BEARER_TOKEN'),
     ],
 
     'webpush' => [

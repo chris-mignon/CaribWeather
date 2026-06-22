@@ -259,8 +259,8 @@ class WeatherDataService
 
     private function fetchAirQuality(float $latitude, float $longitude): array
     {
-        // Prefer Google Air Quality when configured.
-        if (config('services.google.key')) {
+        // Prefer Google Air Quality when an OAuth token is configured.
+        if (config('services.google.air_quality_token')) {
             try {
                 $rawAqi = $this->googleAirQuality->currentRawAqi($latitude, $longitude);
                 if ($rawAqi !== null) {

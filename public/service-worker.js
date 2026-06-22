@@ -1,4 +1,4 @@
-const CACHE_NAME = 'caribweather-v7';
+const CACHE_NAME = 'caribweather-v8';
 const APP_SHELL = [
   '/',
   '/offline.html',

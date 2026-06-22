@@ -8,21 +8,20 @@ class GoogleAirQualityService
 {
     public function currentRawAqi(float $latitude, float $longitude): ?int
     {
-        $key = config('services.google.key');
-        if (! $key) {
+        $token = config('services.google.air_quality_token');
+        if (! $token) {
             return null;
         }
 
         // Google Air Quality API "Current Conditions".
         // Docs: POST https://airquality.googleapis.com/v1/currentConditions:lookup
-        // Note: Google may require OAuth depending on project configuration; we still attempt with API key
-        // and fall back if it fails.
+        // This endpoint requires OAuth, so we only call it when an access token is configured.
         $response = Http::timeout(10)
+            ->withToken($token)
             ->withHeaders([
                 'Accept' => 'application/json',
-                'X-Goog-Api-Key' => $key,
             ])
-            ->post('https://airquality.googleapis.com/v1/currentConditions:lookup?key='.$key, [
+            ->post('https://airquality.googleapis.com/v1/currentConditions:lookup', [
                 'location' => [
                     'latitude' => $latitude,
                     'longitude' => $longitude,
