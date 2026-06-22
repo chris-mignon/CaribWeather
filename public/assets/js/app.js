@@ -172,6 +172,14 @@ function caribWeatherApp() {
         : 'OpenStreetMap base with selectable MVP overlays.';
     },
 
+    get mapProviderLabel() {
+      return this.mapProvider === 'google' ? 'Google Maps' : 'Leaflet / OSM';
+    },
+
+    get mapProviderTone() {
+      return this.mapProvider === 'google' ? 'bg-blue-500/20 text-blue-50 ring-blue-300/30' : 'bg-white/10 text-cyan-50 ring-white/10';
+    },
+
     init() {
       localStorage.setItem('cw-client-id', this.clientId);
       const hashView = window.location.hash.replace('#', '');

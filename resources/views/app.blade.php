@@ -231,8 +231,13 @@
       <section x-show="activeView === 'map'" x-transition>
         <div class="grid gap-5 lg:grid-cols-[18rem_1fr]">
           <aside class="rounded-[2rem] border border-white/10 bg-white/10 p-5 backdrop-blur">
-            <h2 class="text-xl font-black">Weather Map</h2>
-            <p class="mt-2 text-sm text-cyan-50/70" x-text="mapBaseDescription"></p>
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h2 class="text-xl font-black">Weather Map</h2>
+                <p class="mt-2 text-sm text-cyan-50/70" x-text="mapBaseDescription"></p>
+              </div>
+              <span class="rounded-full px-3 py-1 text-xs font-black uppercase tracking-[.2em] ring-1" :class="mapProviderTone" x-text="mapProviderLabel"></span>
+            </div>
             <div class="mt-5 space-y-2">
               <template x-for="layer in mapLayers" :key="layer.id">
                 <button type="button" class="w-full rounded-2xl px-4 py-3 text-left text-sm font-black transition" :class="activeLayer === layer.id ? 'bg-white text-slate-950' : 'bg-white/10 text-white hover:bg-white/20'" @click="setLayer(layer.id)">
@@ -273,7 +278,10 @@
             </div>
           </aside>
           <div class="overflow-hidden rounded-[2rem] border border-white/10 bg-white/10 p-3 shadow-2xl">
-            <div id="weather-map" class="h-[32rem] rounded-[1.5rem]"></div>
+            <div class="relative">
+              <div id="weather-map" class="h-[32rem] rounded-[1.5rem]"></div>
+              <div class="pointer-events-none absolute left-3 top-3 rounded-full bg-slate-950/80 px-3 py-1 text-[10px] font-black uppercase tracking-[.2em] text-white ring-1 ring-white/10" x-text="mapProviderLabel"></div>
+            </div>
           </div>
         </div>
       </section>
