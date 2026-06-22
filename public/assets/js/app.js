@@ -19,6 +19,10 @@ function caribWeatherApp() {
     selectedCityKey: localStorage.getItem('cw-selected-city') || '',
     weather: mockWeather('St. George\'s, Grenada'),
     map: null,
+    mapProvider: window.CARIBWEATHER_GOOGLE_MAPS_KEY ? 'google' : 'leaflet',
+    googleMap: null,
+    googleInfoWindow: null,
+    googleMapsApiPromise: null,
     mapMarker: null,
     radarLayer: null,
     stormLayer: null,
@@ -160,6 +164,12 @@ function caribWeatherApp() {
 
     get activeLayerDescription() {
       return this.mapLayers.find((layer) => layer.id === this.activeLayer)?.description || '';
+    },
+
+    get mapBaseDescription() {
+      return this.mapProvider === 'google'
+        ? 'Google Maps basemap with selectable MVP overlays.'
+        : 'OpenStreetMap base with selectable MVP overlays.';
     },
 
     init() {
@@ -336,7 +346,7 @@ function caribWeatherApp() {
           this.locationQuery = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
           this.weather.coordinates = [latitude, longitude];
           this.fetchWeather(this.locationQuery);
-          if (this.map) this.map.setView([latitude, longitude], 9);
+          this.setMapCenter([latitude, longitude], 9);
         },
         () => { this.notice = 'GPS permission was denied or unavailable.'; },
         { enableHighAccuracy: true, timeout: 8000 }
@@ -374,9 +384,63 @@ function caribWeatherApp() {
       return 'Good';
     },
 
-    initMap() {
+    hasGoogleMapsKey() {
+      return Boolean(window.CARIBWEATHER_GOOGLE_MAPS_KEY);
+    },
+
+    loadGoogleMapsApi() {
+      if (window.google?.maps) return Promise.resolve(window.google.maps);
+      if (this.googleMapsApiPromise) return this.googleMapsApiPromise;
+
+      const key = window.CARIBWEATHER_GOOGLE_MAPS_KEY;
+      if (!key) return Promise.reject(new Error('Google Maps API key is not configured.'));
+
+      this.googleMapsApiPromise = new Promise((resolve, reject) => {
+        const existing = document.getElementById('google-maps-js');
+        if (existing) {
+          existing.addEventListener('load', () => resolve(window.google?.maps));
+          existing.addEventListener('error', () => reject(new Error('Google Maps failed to load.')));
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.id = 'google-maps-js';
+        script.async = true;
+        script.defer = true;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly`;
+        script.onload = () => resolve(window.google?.maps);
+        script.onerror = () => reject(new Error('Google Maps failed to load.'));
+        document.head.appendChild(script);
+      });
+
+      return this.googleMapsApiPromise;
+    },
+
+    async initMap() {
+      try {
+        if (this.hasGoogleMapsKey()) {
+          await this.initGoogleMap();
+        } else {
+          this.initLeafletMap();
+        }
+      } catch (error) {
+        this.notice = 'Google Maps could not load; using Leaflet fallback.';
+        this.initLeafletMap();
+      }
+
+      if (this.mapProvider === 'leaflet' && this.map) {
+        this.map.invalidateSize();
+      }
+
+      this.updateMapMarker();
+      await this.setLayer(this.activeLayer);
+    },
+
+    initLeafletMap() {
       if (typeof L === 'undefined') return;
-      if (!this.map) {
+      const needsNewMap = !this.map || this.mapProvider !== 'leaflet';
+      this.mapProvider = 'leaflet';
+      if (needsNewMap) {
         this.map = L.map('weather-map', { zoomControl: true }).setView(this.weather.coordinates, 7);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           attribution: '&copy; OpenStreetMap contributors',
@@ -384,13 +448,86 @@ function caribWeatherApp() {
         }).addTo(this.map);
         this.map.on('click', (event) => this.showMapPopup(event.latlng));
       }
-      this.map.invalidateSize();
-      this.updateMapMarker();
-      this.setLayer(this.activeLayer);
+    },
+
+    async initGoogleMap() {
+      const maps = await this.loadGoogleMapsApi();
+      if (!maps) throw new Error('Google Maps API unavailable');
+
+      this.mapProvider = 'google';
+      const [lat, lng] = this.weather.coordinates;
+      const center = { lat, lng };
+
+      if (!this.googleMap) {
+        this.googleInfoWindow = new maps.InfoWindow();
+        this.googleMap = new maps.Map(document.getElementById('weather-map'), {
+          center,
+          zoom: 7,
+          mapTypeControl: true,
+          streetViewControl: false,
+          fullscreenControl: true,
+          clickableIcons: false
+        });
+        this.googleMap.addListener('click', (event) => this.showMapPopup(event.latLng));
+      } else {
+        this.googleMap.setCenter(center);
+        this.googleMap.setZoom(7);
+      }
+
+      this.map = this.googleMap;
+    },
+
+    setMapCenter(coordinates, zoom = 7) {
+      if (this.mapProvider === 'google' && this.googleMap) {
+        this.googleMap.setCenter({ lat: coordinates[0], lng: coordinates[1] });
+        this.googleMap.setZoom(zoom);
+        return;
+      }
+
+      if (this.map && typeof this.map.setView === 'function') {
+        this.map.setView(coordinates, zoom);
+      }
+    },
+
+    removeOverlay(layer) {
+      if (!layer) return;
+      if (Array.isArray(layer)) {
+        layer.forEach((item) => this.removeOverlay(item));
+        return;
+      }
+
+      if (typeof layer.removeFrom === 'function' && this.map) {
+        layer.removeFrom(this.map);
+        return;
+      }
+
+      if (typeof layer.setMap === 'function') {
+        layer.setMap(null);
+      }
     },
 
     updateMapMarker() {
-      if (!this.map || typeof L === 'undefined') return;
+      if (!this.map) return;
+
+      if (this.mapProvider === 'google' && this.googleMap && window.google?.maps) {
+        if (this.mapMarker) this.mapMarker.setMap(null);
+        const maps = window.google.maps;
+        const [lat, lng] = this.weather.coordinates;
+        this.mapMarker = new maps.Marker({
+          position: { lat, lng },
+          map: this.googleMap,
+          title: this.weather.location
+        });
+        this.mapMarker.addListener('click', () => {
+          this.googleInfoWindow.setContent(`<strong>${escapeHtml(this.weather.location)}</strong><br>${escapeHtml(this.weather.current.summary)}<br>${this.displayTemp(this.weather.current.tempC)} | ${this.weather.current.rainChance}% rain`);
+          this.googleInfoWindow.setPosition({ lat, lng });
+          this.googleInfoWindow.open({ map: this.googleMap, anchor: this.mapMarker });
+        });
+        this.setMapCenter(this.weather.coordinates, 7);
+        return;
+      }
+
+      if (typeof L === 'undefined') return;
       if (this.mapMarker) this.mapMarker.remove();
       this.mapMarker = L.marker(this.weather.coordinates)
         .addTo(this.map)
@@ -414,8 +551,12 @@ function caribWeatherApp() {
     },
 
     clearMapOverlays() {
+      if (this.mapProvider === 'google' && this.googleMap?.overlayMapTypes) {
+        this.googleMap.overlayMapTypes.clear();
+      }
+
       [this.radarLayer, this.stormLayer, this.stormGeometryLayer, this.weatherPointLayer, this.weatherTileLayer].forEach((layer) => {
-        if (layer && this.map) layer.removeFrom(this.map);
+        this.removeOverlay(layer);
       });
       this.radarLayer = null;
       this.stormLayer = null;
@@ -426,7 +567,7 @@ function caribWeatherApp() {
 
     reloadStormGeometry() {
       if (!this.map || this.activeLayer !== 'storms') return;
-      if (this.stormGeometryLayer) this.stormGeometryLayer.removeFrom(this.map);
+      this.removeOverlay(this.stormGeometryLayer);
       this.stormGeometryLayer = null;
       if (!this.stormGeometryEnabled) {
         this.mapStatus = 'Tracks/cones hidden.';
@@ -445,10 +586,22 @@ function caribWeatherApp() {
         const data = await response.json();
         const latest = data.radar?.past?.at(-1) || data.radar?.nowcast?.[0];
         if (!latest?.path) throw new Error('No radar frame available');
-        this.radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`, {
-          opacity: 0.68,
-          attribution: 'Radar: RainViewer'
-        }).addTo(this.map);
+
+        if (this.mapProvider === 'google' && this.googleMap && window.google?.maps) {
+          this.radarLayer = new window.google.maps.ImageMapType({
+            getTileUrl: (coord, zoom) => `https://tilecache.rainviewer.com${latest.path}/256/${zoom}/${coord.x}/${coord.y}/2/1_1.png`,
+            tileSize: new window.google.maps.Size(256, 256),
+            opacity: 0.68,
+            name: 'RainViewer radar'
+          });
+          this.googleMap.overlayMapTypes.push(this.radarLayer);
+        } else {
+          this.radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${latest.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+            opacity: 0.68,
+            attribution: 'Radar: RainViewer'
+          }).addTo(this.map);
+        }
+
         this.mapStatus = `Radar frame: ${new Date((latest.time || 0) * 1000).toLocaleTimeString()}`;
       } catch (error) {
         this.mapStatus = 'RainViewer radar is unavailable right now.';
@@ -461,7 +614,9 @@ function caribWeatherApp() {
         const response = await fetch('/api/storms/active', { headers: { Accept: 'application/json' } });
         if (!response.ok) throw new Error('Storm feed unavailable');
         const data = await response.json();
-        this.stormLayer = L.layerGroup().addTo(this.map);
+        const useGoogle = this.mapProvider === 'google' && this.googleMap && window.google?.maps;
+        const maps = window.google?.maps;
+        this.stormLayer = useGoogle ? [] : L.layerGroup().addTo(this.map);
 
         if (!data.storms?.length) {
           this.mapStatus = 'No active NOAA/NHC storms reported.';
@@ -469,21 +624,44 @@ function caribWeatherApp() {
         }
 
         data.storms.forEach((storm) => {
-          const marker = L.marker([storm.latitude, storm.longitude], {
-            icon: L.divIcon({
-              className: 'storm-marker',
-              html: '<span></span>',
-              iconSize: [28, 28],
-              iconAnchor: [14, 14]
-            })
-          });
-          marker.bindPopup(`
+          const popupHtml = `
             <strong>${escapeHtml(storm.name)}</strong><br>
             ${escapeHtml(storm.classification || 'Active system')} | ${storm.intensity || 'N/A'} kt<br>
             Pressure: ${storm.pressure || 'N/A'} mb<br>
             ${storm.publicAdvisoryUrl ? `<a href="${escapeHtml(storm.publicAdvisoryUrl)}" target="_blank" rel="noopener">Public advisory</a>` : ''}
-          `);
-          marker.addTo(this.stormLayer);
+          `;
+
+          if (useGoogle) {
+            const marker = new maps.Marker({
+              position: { lat: storm.latitude, lng: storm.longitude },
+              map: this.googleMap,
+              title: storm.name,
+              icon: {
+                path: maps.SymbolPath.CIRCLE,
+                scale: 7,
+                fillColor: '#fb7185',
+                fillOpacity: 1,
+                strokeColor: '#fff',
+                strokeWeight: 2
+              }
+            });
+            marker.addListener('click', () => {
+              this.googleInfoWindow.setContent(popupHtml);
+              this.googleInfoWindow.open({ map: this.googleMap, anchor: marker });
+            });
+            this.stormLayer.push(marker);
+          } else {
+            const marker = L.marker([storm.latitude, storm.longitude], {
+              icon: L.divIcon({
+                className: 'storm-marker',
+                html: '<span></span>',
+                iconSize: [28, 28],
+                iconAnchor: [14, 14]
+              })
+            });
+            marker.bindPopup(popupHtml);
+            marker.addTo(this.stormLayer);
+          }
         });
 
         if (!this.stormGeometryEnabled) {
@@ -500,25 +678,43 @@ function caribWeatherApp() {
           const features = geoData?.geojson?.features || [];
           if (features.length) {
             const styles = {
-              track: { color: '#fb7185', weight: 3, opacity: 0.85 },
-              cone: { color: '#60a5fa', weight: 2, opacity: 0.9, fillColor: '#60a5fa', fillOpacity: 0.18 },
-              unknown: { color: '#94a3b8', weight: 2, opacity: 0.7 },
+              track: { strokeColor: '#fb7185', strokeWeight: 3, strokeOpacity: 0.85, fillOpacity: 0 },
+              cone: { strokeColor: '#60a5fa', strokeWeight: 2, strokeOpacity: 0.9, fillColor: '#60a5fa', fillOpacity: 0.18 },
+              unknown: { strokeColor: '#94a3b8', strokeWeight: 2, strokeOpacity: 0.7, fillOpacity: 0 }
             };
 
             const getStyle = (feature) => styles[feature?.properties?.category] || styles.unknown;
 
-            this.stormGeometryLayer = L.geoJSON(geoData.geojson, {
-              style: (feature) => {
-                const s = getStyle(feature);
-                // Leaflet only respects fill* on polygons.
-                if (feature?.geometry?.type === 'Polygon') return s;
-                return { ...s, fillOpacity: 0 };
-              },
-              pointToLayer: (feature, latlng) => {
-                const s = getStyle(feature);
-                return L.circleMarker(latlng, { radius: 6, color: s.color, weight: 2, fillOpacity: 0.6 });
-              },
-            }).addTo(this.map);
+            if (useGoogle) {
+              this.stormGeometryLayer = new maps.Data();
+              this.stormGeometryLayer.addGeoJson(geoData.geojson);
+              this.stormGeometryLayer.setStyle((feature) => {
+                const style = getStyle(feature);
+                return {
+                  strokeColor: style.strokeColor,
+                  strokeWeight: style.strokeWeight,
+                  strokeOpacity: style.strokeOpacity,
+                  fillColor: style.fillColor || style.strokeColor,
+                  fillOpacity: style.fillOpacity,
+                  clickable: false
+                };
+              });
+              this.stormGeometryLayer.setMap(this.googleMap);
+            } else {
+              this.stormGeometryLayer = L.geoJSON(geoData.geojson, {
+                style: (feature) => {
+                  const s = getStyle(feature);
+                  return {
+                    color: s.strokeColor,
+                    weight: s.strokeWeight,
+                    opacity: s.strokeOpacity,
+                    fillColor: s.fillColor || s.strokeColor,
+                    fillOpacity: s.fillOpacity
+                  };
+                },
+                pointToLayer: (feature, latlng) => L.circleMarker(latlng, { radius: 6, color: getStyle(feature).strokeColor, weight: 2, fillOpacity: 0.6 }),
+              }).addTo(this.map);
+            }
 
             this.mapStatus = `${data.storms.length} active NOAA/NHC storm system(s). Geometry loaded (${features.length} feature(s)).`;
           } else {
@@ -534,7 +730,15 @@ function caribWeatherApp() {
 
     addCurrentWeatherOverlay(layer) {
       const tileLayer = { temperature: 'temp_new', wind: 'wind_new', clouds: 'clouds_new' }[layer];
-      if (tileLayer) {
+      if (tileLayer && this.mapProvider === 'google' && this.googleMap && window.google?.maps) {
+        this.weatherTileLayer = new window.google.maps.ImageMapType({
+          getTileUrl: (coord, zoom) => `/api/map/tiles/${tileLayer}/${zoom}/${coord.x}/${coord.y}.png`,
+          tileSize: new window.google.maps.Size(256, 256),
+          opacity: 0.55,
+          name: `OpenWeather ${layer}`
+        });
+        this.googleMap.overlayMapTypes.push(this.weatherTileLayer);
+      } else if (tileLayer) {
         this.weatherTileLayer = L.tileLayer(`/api/map/tiles/${tileLayer}/{z}/{x}/{y}.png`, {
           opacity: 0.55,
           attribution: 'Weather tiles: OpenWeather'
@@ -543,13 +747,31 @@ function caribWeatherApp() {
 
       const [lat, lon] = this.weather.coordinates;
       const label = this.mapLayerValue(layer);
-      this.weatherPointLayer = L.circleMarker([lat, lon], {
-        radius: 18,
-        color: layer === 'temperature' ? '#f97316' : layer === 'wind' ? '#14b8a6' : '#94a3b8',
-        fillColor: layer === 'temperature' ? '#fb923c' : layer === 'wind' ? '#2dd4bf' : '#cbd5e1',
-        fillOpacity: 0.45,
-        weight: 3
-      }).addTo(this.map).bindPopup(`<strong>${escapeHtml(this.weather.location)}</strong><br>${escapeHtml(label)}`);
+      if (this.mapProvider === 'google' && this.googleMap && window.google?.maps) {
+        this.weatherPointLayer = new window.google.maps.Circle({
+          map: this.googleMap,
+          center: { lat, lng: lon },
+          radius: 18000,
+          strokeColor: layer === 'temperature' ? '#f97316' : layer === 'wind' ? '#14b8a6' : '#94a3b8',
+          strokeOpacity: 0.85,
+          strokeWeight: 3,
+          fillColor: layer === 'temperature' ? '#fb923c' : layer === 'wind' ? '#2dd4bf' : '#cbd5e1',
+          fillOpacity: 0.35
+        });
+        this.weatherPointLayer.addListener('click', () => {
+          this.googleInfoWindow.setContent(`<strong>${escapeHtml(this.weather.location)}</strong><br>${escapeHtml(label)}`);
+          this.googleInfoWindow.setPosition({ lat, lng: lon });
+          this.googleInfoWindow.open({ map: this.googleMap });
+        });
+      } else {
+        this.weatherPointLayer = L.circleMarker([lat, lon], {
+          radius: 18,
+          color: layer === 'temperature' ? '#f97316' : layer === 'wind' ? '#14b8a6' : '#94a3b8',
+          fillColor: layer === 'temperature' ? '#fb923c' : layer === 'wind' ? '#2dd4bf' : '#cbd5e1',
+          fillOpacity: 0.45,
+          weight: 3
+        }).addTo(this.map).bindPopup(`<strong>${escapeHtml(this.weather.location)}</strong><br>${escapeHtml(label)}`);
+      }
       this.mapStatus = tileLayer
         ? 'Live tile layer enabled. Click anywhere for point weather lookup.'
         : 'Click anywhere on the map for point weather lookup.';
@@ -563,26 +785,50 @@ function caribWeatherApp() {
     },
 
     async showMapPopup(latlng) {
-      if (!this.map || typeof L === 'undefined') return;
-      const popup = L.popup()
-        .setLatLng(latlng)
-        .setContent(`Loading point weather...<br>Lat ${latlng.lat.toFixed(3)}, Lng ${latlng.lng.toFixed(3)}`)
-        .openOn(this.map);
+      if (!this.map) return;
+
+      const getLat = () => (typeof latlng.lat === 'function' ? latlng.lat() : latlng.lat);
+      const getLng = () => (typeof latlng.lng === 'function' ? latlng.lng() : latlng.lng);
+      const lat = getLat();
+      const lng = getLng();
+
+      if (this.mapProvider === 'google' && this.googleInfoWindow && window.google?.maps) {
+        this.googleInfoWindow.setPosition({ lat, lng });
+        this.googleInfoWindow.setContent(`Loading point weather...<br>Lat ${lat.toFixed(3)}, Lng ${lng.toFixed(3)}`);
+        this.googleInfoWindow.open({ map: this.googleMap });
+      } else if (typeof L !== 'undefined') {
+        const popup = L.popup()
+          .setLatLng(latlng)
+          .setContent(`Loading point weather...<br>Lat ${lat.toFixed(3)}, Lng ${lng.toFixed(3)}`)
+          .openOn(this.map);
+        this._activeLeafletPopup = popup;
+      }
 
       try {
-        const location = `${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)}`;
+        const location = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
         const response = await fetch(`/api/weather/current?location=${encodeURIComponent(location)}`, { headers: { Accept: 'application/json' } });
         if (!response.ok) throw new Error('Point weather unavailable');
         const data = await response.json();
-        popup.setContent(`
+        const content = `
           <strong>Point Weather</strong><br>
           ${escapeHtml(data.current.summary)}<br>
           ${this.displayTemp(data.current.tempC)} | Wind ${this.displayWind(data.current.windKph)}<br>
           Rain ${data.current.rainChance}% | Clouds ${data.current.cloudCover}%<br>
-          Lat ${latlng.lat.toFixed(3)}, Lng ${latlng.lng.toFixed(3)}
-        `);
+          Lat ${lat.toFixed(3)}, Lng ${lng.toFixed(3)}
+        `;
+
+        if (this.mapProvider === 'google' && this.googleInfoWindow) {
+          this.googleInfoWindow.setContent(content);
+        } else if (this._activeLeafletPopup) {
+          this._activeLeafletPopup.setContent(content);
+        }
       } catch (error) {
-        popup.setContent(`<strong>${escapeHtml(this.activeLayer)}</strong><br>${escapeHtml(this.activeLayerDescription)}<br>Lat ${latlng.lat.toFixed(3)}, Lng ${latlng.lng.toFixed(3)}`);
+        const content = `<strong>${escapeHtml(this.activeLayer)}</strong><br>${escapeHtml(this.activeLayerDescription)}<br>Lat ${lat.toFixed(3)}, Lng ${lng.toFixed(3)}`;
+        if (this.mapProvider === 'google' && this.googleInfoWindow) {
+          this.googleInfoWindow.setContent(content);
+        } else if (this._activeLeafletPopup) {
+          this._activeLeafletPopup.setContent(content);
+        }
       }
     },
 

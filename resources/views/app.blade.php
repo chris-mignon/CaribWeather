@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQOYn+QO7Qm6tf5l+6qnxuZg2i6vFsc=" crossorigin="">
   <link rel="stylesheet" href="/assets/css/styles.css">
   <script>
+    window.CARIBWEATHER_GOOGLE_MAPS_KEY = @json(config('services.google.key'));
     tailwind.config = {
       theme: {
         extend: {
@@ -231,7 +232,7 @@
         <div class="grid gap-5 lg:grid-cols-[18rem_1fr]">
           <aside class="rounded-[2rem] border border-white/10 bg-white/10 p-5 backdrop-blur">
             <h2 class="text-xl font-black">Weather Map</h2>
-            <p class="mt-2 text-sm text-cyan-50/70">OpenStreetMap base with selectable MVP overlays.</p>
+            <p class="mt-2 text-sm text-cyan-50/70" x-text="mapBaseDescription"></p>
             <div class="mt-5 space-y-2">
               <template x-for="layer in mapLayers" :key="layer.id">
                 <button type="button" class="w-full rounded-2xl px-4 py-3 text-left text-sm font-black transition" :class="activeLayer === layer.id ? 'bg-white text-slate-950' : 'bg-white/10 text-white hover:bg-white/20'" @click="setLayer(layer.id)">
